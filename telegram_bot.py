@@ -1,6 +1,11 @@
+import os
+
+# Debug: tampilkan env var names yang relevan (tanpa nilai) untuk verifikasi di Railway logs
+_debug_env_keys = sorted(k for k in os.environ if any(x in k.upper() for x in ("TELEGRAM", "ANTHROPIC", "GOOGLE")))
+print(f"[DEBUG] Env vars tersedia: {_debug_env_keys}", flush=True)
+
 import sys
 import io
-import os
 import re
 import json
 import logging
@@ -8,10 +13,6 @@ import tempfile
 import base64
 import httpx
 from datetime import datetime
-
-# Debug: tampilkan env var names yang relevan (tanpa nilai) untuk verifikasi di Railway logs
-_debug_env_keys = sorted(k for k in os.environ if any(x in k.upper() for x in ("TELEGRAM", "ANTHROPIC", "GOOGLE")))
-print(f"[DEBUG] Env vars tersedia: {_debug_env_keys}")
 
 if sys.stdout and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -1544,11 +1545,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 def main():
     if not TELEGRAM_BOT_TOKEN:
-        print("[ERROR] TELEGRAM_BOT_TOKEN tidak ditemukan! Set environment variable TELEGRAM_BOT_TOKEN.")
-        return
+        print("[WARNING] TELEGRAM_BOT_TOKEN tidak ditemukan! Set environment variable TELEGRAM_BOT_TOKEN.")
     if not ANTHROPIC_API_KEY:
-        print("[ERROR] ANTHROPIC_API_KEY tidak ditemukan! Set environment variable ANTHROPIC_API_KEY.")
-        return
+        print("[WARNING] ANTHROPIC_API_KEY tidak ditemukan! Set environment variable ANTHROPIC_API_KEY.")
 
     guidelines = load_brand_guidelines()
 
