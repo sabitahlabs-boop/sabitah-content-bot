@@ -1,0 +1,26 @@
+# Credentials & secrets
+.env
+token.json
+oauth_credentials.json
+*service_account*.json
+*credentials*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Reports
+report.txt

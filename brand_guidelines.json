@@ -1,0 +1,86 @@
+{
+  "Sabitah": {
+    "tone": "edukatif, direct, casual",
+    "target": "entrepreneur Indonesia",
+    "cta": "soft sell ke jasa branding Sabitah",
+    "bahasa": "Indonesia campur sedikit English",
+    "rules": [
+      "Selalu posisikan Sabitah sebagai partner branding yang ngerti bisnis",
+      "Gunakan contoh nyata dari dunia bisnis Indonesia",
+      "CTA tidak boleh hard sell, harus terasa natural",
+      "Boleh pakai istilah English untuk konsep bisnis/branding"
+    ]
+  },
+  "County": {
+    "tone": "profesional tapi friendly",
+    "target": "pemilik UMKM",
+    "cta": "coba County app",
+    "bahasa": "Indonesia formal ringan",
+    "rules": [
+      "Fokus pada solusi praktis untuk UMKM",
+      "Highlight kemudahan dan efisiensi County app",
+      "Jangan terlalu teknis, tetap approachable",
+      "CTA arahkan ke download atau coba County app"
+    ]
+  },
+  "LEGUS": {
+    "tone": "terpercaya, authoritative",
+    "target": "pengusaha butuh legal",
+    "cta": "konsultasi gratis di LEGUS",
+    "bahasa": "Indonesia formal",
+    "rules": [
+      "Posisikan LEGUS sebagai ahli hukum bisnis yang bisa dipercaya",
+      "Gunakan data atau fakta hukum yang relevan",
+      "Jangan pakai bahasa gaul, tetap formal tapi tidak kaku",
+      "CTA selalu arahkan ke konsultasi gratis"
+    ]
+  },
+  "Defarchy": {
+    "tone": "energik, young",
+    "target": "anak muda urban",
+    "cta": "cek koleksi Defarchy",
+    "bahasa": "Indonesia gaul",
+    "rules": [
+      "Bahasa harus relatable untuk Gen Z dan millennial",
+      "Boleh pakai slang dan bahasa internet",
+      "Visual direction harus bold dan eye-catching",
+      "CTA arahkan ke koleksi atau produk Defarchy"
+    ]
+  },
+  "Playpod": {
+    "tone": "cozy, inviting",
+    "target": "pekerja remote, mahasiswa",
+    "cta": "booking Playpod sekarang",
+    "bahasa": "Indonesia santai",
+    "rules": [
+      "Gambarkan Playpod sebagai tempat yang nyaman dan produktif",
+      "Highlight fasilitas: WiFi kencang, AC, suasana tenang",
+      "Gunakan skenario relatable: WFH, ngerjain tugas, nongkrong",
+      "CTA arahkan ke booking atau visit Playpod"
+    ]
+  },
+  "Happy Baby": {
+    "tone": "warm, caring",
+    "target": "new parents",
+    "cta": "cek produk Happy Baby",
+    "bahasa": "Indonesia lembut",
+    "rules": [
+      "Tone harus empathetic dan supportive ke orang tua baru",
+      "Fokus pada keamanan, kenyamanan, dan kualitas produk",
+      "Jangan judgmental tentang parenting style",
+      "CTA harus terasa sebagai rekomendasi teman, bukan jualan"
+    ]
+  },
+  "Personal Brand Dimas": {
+    "tone": "honest, raw, reflective",
+    "target": "entrepreneur muda",
+    "cta": "follow untuk insight bisnis",
+    "bahasa": "Indonesia campur English",
+    "rules": [
+      "Tulis seolah-olah Dimas sendiri yang bicara, first person",
+      "Sharing pengalaman nyata, termasuk kegagalan",
+      "Boleh vulnerable dan reflective",
+      "CTA: follow, engage, atau share pengalaman serupa"
+    ]
+  }
+}
