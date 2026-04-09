@@ -21,7 +21,10 @@ def load_env():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, val = line.split("=", 1)
-                    os.environ[key.strip()] = val.strip()
+                    key = key.strip()
+                    # Jangan timpa env var yang sudah ada (Railway)
+                    if key not in os.environ:
+                        os.environ[key] = val.strip()
 
 load_env()
 
