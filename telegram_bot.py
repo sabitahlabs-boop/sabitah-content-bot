@@ -9,6 +9,10 @@ import base64
 import httpx
 from datetime import datetime
 
+# Debug: tampilkan env var names yang relevan (tanpa nilai) untuk verifikasi di Railway logs
+_debug_env_keys = sorted(k for k in os.environ if any(x in k.upper() for x in ("TELEGRAM", "ANTHROPIC", "GOOGLE")))
+print(f"[DEBUG] Env vars tersedia: {_debug_env_keys}")
+
 if sys.stdout and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
