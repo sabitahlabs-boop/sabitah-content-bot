@@ -12,21 +12,8 @@ from datetime import datetime
 if sys.stdout and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-# Load .env (lokal development), di Railway pakai env vars langsung
-def load_env():
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, val = line.split("=", 1)
-                    key = key.strip()
-                    # Jangan timpa env var yang sudah ada (Railway)
-                    if key not in os.environ:
-                        os.environ[key] = val.strip()
-
-load_env()
+# Semua credentials dibaca dari os.environ (Railway / terminal)
+# Untuk development lokal, set env var manual di terminal sebelum jalankan script
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -1553,10 +1540,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 def main():
     if not TELEGRAM_BOT_TOKEN:
-        print("[ERROR] TELEGRAM_BOT_TOKEN tidak ditemukan di .env!")
+        print("[ERROR] TELEGRAM_BOT_TOKEN tidak ditemukan! Set environment variable TELEGRAM_BOT_TOKEN.")
         return
     if not ANTHROPIC_API_KEY:
-        print("[ERROR] ANTHROPIC_API_KEY tidak ditemukan di .env!")
+        print("[ERROR] ANTHROPIC_API_KEY tidak ditemukan! Set environment variable ANTHROPIC_API_KEY.")
         return
 
     guidelines = load_brand_guidelines()
