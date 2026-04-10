@@ -267,6 +267,48 @@ def read_sheet_info():
     return headers, data_rows, brands
 
 
+REQUIRED_HEADERS = ["Canva Link", "Production Status", "Visual Status"]
+
+
+def col_to_letter(col_index):
+    """Convert 0-based column index to sheet letter (0=A, 25=Z, 26=AA)."""
+    result = ""
+    while True:
+        result = chr(65 + col_index % 26) + result
+        col_index = col_index // 26 - 1
+        if col_index < 0:
+            break
+    return result
+
+
+def ensure_sheet_headers(headers):
+    """Pastikan kolom wajib ada di Sheet. Tambahkan kalau belum ada."""
+    headers_lower = [h.strip().lower() for h in headers]
+    missing = [h for h in REQUIRED_HEADERS if h.strip().lower() not in headers_lower]
+    if not missing:
+        return headers
+
+    try:
+        service = get_sheets_service()
+        # Header ada di row 2 (index 1), tambah kolom baru setelah kolom terakhir
+        start_col = len(headers)
+        for i, new_header in enumerate(missing):
+            col_letter = col_to_letter(start_col + i)
+            cell = f"'{SHEET_NAME}'!{col_letter}2"
+            service.spreadsheets().values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=cell,
+                valueInputOption="RAW",
+                body={"values": [[new_header]]},
+            ).execute()
+            headers.append(new_header)
+            logger.info(f"[SHEET] Added header '{new_header}' at column {col_letter}")
+    except Exception as e:
+        logger.error(f"[SHEET] Failed to add headers: {e}")
+
+    return headers
+
+
 def get_header_index(headers):
     """Return dict mapping field name -> column index."""
     mapping = {}
@@ -301,6 +343,7 @@ def get_header_index(headers):
         "notes / keterangan": "notes",
         "bottleneck / issue": "bottleneck",
         "revision notes": "revision",
+        "visual status": "visual_status",
     }
     for idx, h in enumerate(headers):
         key = h.strip().lower()
@@ -386,6 +429,8 @@ def extract_brief_and_script(full_output):
 def append_to_sheet(headers, col_map, brand, content_id, date_str,
                     content_type, topik, angle, full_output, qa_status):
     """Tambah baris baru sesuai kolom header yang ada."""
+    headers = ensure_sheet_headers(headers)
+    col_map = get_header_index(headers)
     brief, script = extract_brief_and_script(full_output)
     logger.info(f"[SHEET] Brief length: {len(brief)}, Script length: {len(script)}")
     logger.info(f"[SHEET] Brief preview: {brief[:150]!r}")
@@ -413,6 +458,8 @@ def append_to_sheet(headers, col_map, brand, content_id, date_str,
         "difficulty": "Medium",
         "effort": "Medium",
         "notes": f"QA: {qa_status}",
+        "canva_link": "",
+        "visual_status": "Not Started",
     }
 
     for field, value in field_values.items():
@@ -978,12 +1025,14 @@ def parse_slides_from_script(script_text):
 
 
 async def canva_create_design(title, num_pages=7):
-    """Buat desain baru di Canva via Connect API. Return design ID dan edit URL."""
+    """Buat desain baru di Canva via Connect API (1080x1080 IG Square).
+    Return (design_id, edit_url, view_url).
+    Note: Connect API tidak support add pages atau text elements secara langsung.
+    Design dibuat sebagai canvas kosong — user edit manual atau pakai Brand Template + Autofill."""
     if not CANVA_ACCESS_TOKEN:
         raise ValueError("CANVA_ACCESS_TOKEN tidak di-set")
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        # Create design — Instagram Post square (1080x1080)
         resp = await client.post(
             f"{CANVA_API_BASE}/designs",
             headers={
@@ -991,7 +1040,11 @@ async def canva_create_design(title, num_pages=7):
                 "Content-Type": "application/json",
             },
             json={
-                "design_type": {"type": "preset", "name": "InstagramPost"},
+                "design_type": {
+                    "type": "custom",
+                    "width": 1080,
+                    "height": 1080,
+                },
                 "title": title,
             },
         )
@@ -1003,97 +1056,21 @@ async def canva_create_design(title, num_pages=7):
         view_url = design.get("urls", {}).get("view_url", "")
 
         logger.info(f"[CANVA] Design created: {design_id}")
-
-        # Tambah halaman (design sudah punya 1 halaman, tambah sisanya)
-        for i in range(num_pages - 1):
-            try:
-                add_resp = await client.post(
-                    f"{CANVA_API_BASE}/designs/{design_id}/pages",
-                    headers={
-                        "Authorization": f"Bearer {CANVA_ACCESS_TOKEN}",
-                        "Content-Type": "application/json",
-                    },
-                    json={},
-                )
-                add_resp.raise_for_status()
-            except Exception as e:
-                logger.warning(f"[CANVA] Failed to add page {i+2}: {e}")
-
         return design_id, edit_url, view_url
 
 
-async def canva_add_text_to_pages(design_id, slides):
-    """Tambah teks ke setiap halaman desain Canva."""
-    if not CANVA_ACCESS_TOKEN:
-        return
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        # Get pages
-        resp = await client.get(
-            f"{CANVA_API_BASE}/designs/{design_id}/pages",
-            headers={"Authorization": f"Bearer {CANVA_ACCESS_TOKEN}"},
-        )
-        if resp.status_code != 200:
-            logger.warning(f"[CANVA] Cannot get pages: {resp.status_code}")
-            return
-
-        pages = resp.json().get("items", [])
-
-        for i, page in enumerate(pages):
-            if i >= len(slides):
-                break
-            slide = slides[i]
-            page_id = page.get("id", "")
-
-            # Tambah title text element
-            elements = []
-            if slide["title"]:
-                elements.append({
-                    "type": "text",
-                    "text": slide["title"],
-                    "position": {"x": 50, "y": 80, "width": 980, "height": 150},
-                    "style": {"font_size": 48, "font_weight": "bold", "text_align": "center"},
-                })
-
-            # Tambah body text element
-            if slide["body"]:
-                y_pos = 280 if slide["title"] else 150
-                elements.append({
-                    "type": "text",
-                    "text": slide["body"],
-                    "position": {"x": 80, "y": y_pos, "width": 920, "height": 600},
-                    "style": {"font_size": 28, "text_align": "left"},
-                })
-
-            for elem in elements:
-                try:
-                    await client.post(
-                        f"{CANVA_API_BASE}/designs/{design_id}/pages/{page_id}/elements",
-                        headers={
-                            "Authorization": f"Bearer {CANVA_ACCESS_TOKEN}",
-                            "Content-Type": "application/json",
-                        },
-                        json=elem,
-                    )
-                except Exception as e:
-                    logger.warning(f"[CANVA] Failed to add element on page {i+1}: {e}")
-
-
 async def generate_canva_carousel(brand, topik, script_text):
-    """Full flow: create design + add text slides. Return (edit_url, view_url)."""
+    """Create design + kirim script sebagai referensi. Return (edit_url, view_url).
+    Script dikirim ke user via chat sebagai panduan konten per slide."""
     slides = parse_slides_from_script(script_text)
     if not slides:
         logger.warning("[CANVA] No slides parsed from script")
         return None, None
 
-    num_slides = len(slides)
     title = f"{brand} — {topik}"[:100]
 
-    logger.info(f"[CANVA] Creating carousel: {title} ({num_slides} slides)")
-    design_id, edit_url, view_url = await canva_create_design(title, num_slides)
-
-    if design_id:
-        await canva_add_text_to_pages(design_id, slides)
+    logger.info(f"[CANVA] Creating carousel: {title} ({len(slides)} slides)")
+    design_id, edit_url, view_url = await canva_create_design(title)
 
     return edit_url, view_url
 
@@ -1112,7 +1089,7 @@ def update_sheet_canva_link(content_id, canva_url):
         for row_idx, row in enumerate(data_rows):
             if len(row) > cid_col and row[cid_col].strip() == content_id:
                 # Row di sheet = row_idx + 3 (baris 1=title, 2=header, 3+=data)
-                cell = f"'{SHEET_NAME}'!{chr(65 + canva_col)}{row_idx + 3}"
+                cell = f"'{SHEET_NAME}'!{col_to_letter(canva_col)}{row_idx + 3}"
                 service = get_sheets_service()
                 service.spreadsheets().values().update(
                     spreadsheetId=SPREADSHEET_ID,
