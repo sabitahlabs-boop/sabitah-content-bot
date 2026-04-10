@@ -41,6 +41,7 @@ if os.path.exists(FFMPEG_DIR):
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SPREADSHEET_ID = os.environ.get("GOOGLE_SPREADSHEET_ID", "13_BnnBjVLRcpJAiyieBqF7tnuoRZ7ij7fs0u8Z9Hd1Y")
+REPORT_CHAT_ID = os.environ.get("REPORT_CHAT_ID", "")  # Telegram chat ID untuk daily report
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_NAME = "Master Tracker"
 
@@ -1107,6 +1108,11 @@ async def finalize_and_generate(update, context, session):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_session(context)
 
+    # Auto-save chat ID untuk daily report
+    chat_id = str(update.effective_chat.id)
+    context.bot_data["report_chat_id"] = chat_id
+    logger.info(f"[REPORT] Chat ID saved: {chat_id}")
+
     # Load brand list dari guidelines
     guidelines = load_brand_guidelines()
     brand_list = "\n".join(f"  - {b}" for b in guidelines.keys())
@@ -1123,7 +1129,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "- Auto-detect brand, topik, angle dari pesan bebas\n"
         "- Generate script sesuai brand guidelines\n"
         "- QA review otomatis + auto-revisi\n"
-        "- Simpan ke Google Sheet\n\n"
+        "- Simpan ke Google Sheet\n"
+        "- /report — lihat daily report sekarang\n\n"
         "Ketik /cancel untuk batalkan proses."
     )
 
@@ -1753,6 +1760,165 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================================
+# DAILY REPORT
+# ============================================================
+def build_daily_report():
+    """Baca Google Sheet dan buat summary report."""
+    try:
+        headers, data_rows, brands_in_sheet = read_sheet_info()
+        col_map = get_header_index(headers)
+    except Exception as e:
+        logger.error(f"[REPORT] Gagal baca sheet: {e}")
+        return f"❌ Gagal baca Google Sheet:\n{e}"
+
+    if not headers:
+        return "📊 Sheet kosong, belum ada data."
+
+    today = datetime.now()
+    # Hitung per brand
+    brand_stats = {}  # brand -> {done, in_progress, not_started}
+    urgent = []       # deadline hari ini/besok tapi belum done
+    week_generated = 0  # script generated minggu ini
+
+    for row in data_rows:
+        # Ambil values dengan safe indexing
+        def col(field):
+            idx = col_map.get(field)
+            if idx is not None and idx < len(row):
+                return row[idx].strip()
+            return ""
+
+        brand = col("brand") or "(No Brand)"
+        script_status = col("script_status").lower()
+        date_str = col("date")
+        script_owner = col("script_owner").lower()
+
+        # Stats per brand
+        if brand not in brand_stats:
+            brand_stats[brand] = {"done": 0, "in_progress": 0, "not_started": 0, "total": 0}
+        brand_stats[brand]["total"] += 1
+
+        if "done" in script_status:
+            brand_stats[brand]["done"] += 1
+        elif script_status in ("", "not started"):
+            brand_stats[brand]["not_started"] += 1
+        else:
+            brand_stats[brand]["in_progress"] += 1
+
+        # Cek deadline urgent (hari ini / besok)
+        if date_str and "done" not in script_status:
+            try:
+                # Parse berbagai format tanggal
+                parsed_date = None
+                for fmt in ["%b %d", "%d %b", "%Y-%m-%d", "%d/%m/%Y", "%B %d"]:
+                    try:
+                        parsed_date = datetime.strptime(date_str, fmt)
+                        # Tahun default = tahun ini
+                        parsed_date = parsed_date.replace(year=today.year)
+                        break
+                    except ValueError:
+                        continue
+                if parsed_date:
+                    delta = (parsed_date.date() - today.date()).days
+                    if 0 <= delta <= 1:
+                        topik = col("topik") or "(no topic)"
+                        day_label = "HARI INI" if delta == 0 else "BESOK"
+                        urgent.append(f"  ⚠️ [{day_label}] {brand} — {topik}")
+            except Exception:
+                pass
+
+        # Script generated minggu ini (by Claude AI)
+        if "done" in script_status and "claude" in script_owner:
+            # Cek apakah date masih minggu ini
+            try:
+                parsed_date = None
+                for fmt in ["%b %d", "%d %b", "%Y-%m-%d", "%d/%m/%Y", "%B %d"]:
+                    try:
+                        parsed_date = datetime.strptime(date_str, fmt).replace(year=today.year)
+                        break
+                    except ValueError:
+                        continue
+                if parsed_date:
+                    days_ago = (today.date() - parsed_date.date()).days
+                    if 0 <= days_ago <= 7:
+                        week_generated += 1
+            except Exception:
+                pass
+
+    # Format report
+    lines = []
+    lines.append("📊 *DAILY REPORT — Content Tracker*")
+    lines.append(f"📅 {today.strftime('%A, %d %B %Y')}")
+    lines.append("")
+
+    # Per brand stats
+    lines.append("📋 *Status per Brand:*")
+    for brand in sorted(brand_stats.keys()):
+        s = brand_stats[brand]
+        lines.append(
+            f"  *{brand}*: ✅ {s['done']} done · 🔄 {s['in_progress']} progress · "
+            f"⬜ {s['not_started']} pending  ({s['total']} total)"
+        )
+    lines.append("")
+
+    # Urgent deadlines
+    if urgent:
+        lines.append("🔥 *Deadline Mendesak:*")
+        lines.extend(urgent)
+    else:
+        lines.append("✅ *Tidak ada deadline mendesak hari ini/besok*")
+    lines.append("")
+
+    # Weekly stats
+    lines.append(f"🤖 *Script generated minggu ini:* {week_generated}")
+    lines.append("")
+    lines.append("—")
+    lines.append("_Auto-generated by Sabitah Bot_")
+
+    return "\n".join(lines)
+
+
+async def send_daily_report(context: ContextTypes.DEFAULT_TYPE):
+    """Kirim daily report ke chat ID yang sudah di-set."""
+    chat_id = REPORT_CHAT_ID or context.bot_data.get("report_chat_id", "")
+    if not chat_id:
+        logger.warning("[REPORT] Tidak ada REPORT_CHAT_ID, skip daily report")
+        return
+
+    logger.info(f"[REPORT] Sending daily report to {chat_id}")
+    report = build_daily_report()
+
+    try:
+        await context.bot.send_message(
+            chat_id=int(chat_id),
+            text=report,
+            parse_mode="Markdown",
+        )
+        logger.info("[REPORT] Daily report sent successfully")
+    except Exception as e:
+        logger.error(f"[REPORT] Gagal kirim report: {e}", exc_info=True)
+        # Coba kirim tanpa markdown kalau formatting error
+        try:
+            await context.bot.send_message(chat_id=int(chat_id), text=report)
+        except Exception:
+            pass
+
+
+async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manual trigger: /report — kirim daily report sekarang."""
+    # Simpan chat ID untuk daily report
+    chat_id = str(update.effective_chat.id)
+    context.bot_data["report_chat_id"] = chat_id
+    logger.info(f"[REPORT] Manual report requested by chat_id={chat_id}")
+
+    report = build_daily_report()
+    try:
+        await update.message.reply_text(report, parse_mode="Markdown")
+    except Exception:
+        await update.message.reply_text(report)
+
+
+# ============================================================
 # MAIN
 # ============================================================
 def main():
@@ -1768,6 +1934,7 @@ def main():
     print(f"  Bot Token: ...{TELEGRAM_BOT_TOKEN[-8:]}")
     print(f"  API Key  : ...{ANTHROPIC_API_KEY[-8:]}")
     print(f"  Sheet    : {SPREADSHEET_ID}")
+    print(f"  Report to: {REPORT_CHAT_ID or '(auto from /report)'}")
     print(f"  Brands   : {', '.join(guidelines.keys())}")
     print("=" * 60)
     print("  Fitur:")
@@ -1776,16 +1943,32 @@ def main():
     print("    - QA Agent: auto-review + auto-revisi")
     print("    - Multi-step conversation flow")
     print("    - Auto-save ke Google Sheet")
+    print("    - Daily report jam 08:00 WIB")
     print("=" * 60)
     print("\n  Bot sedang berjalan... (Ctrl+C untuk stop)\n")
 
     request = HTTPXRequest(read_timeout=60, write_timeout=60, connect_timeout=60)
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
+
+    # Handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
+    app.add_handler(CommandHandler("report", report_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    # Schedule daily report jam 08:00 WIB (01:00 UTC)
+    from datetime import time as dt_time, timezone, timedelta
+    wib = timezone(timedelta(hours=7))
+    report_time = dt_time(hour=8, minute=0, second=0, tzinfo=wib)
+
+    if app.job_queue:
+        app.job_queue.run_daily(send_daily_report, time=report_time, name="daily_report")
+        logger.info(f"[REPORT] Daily report scheduled at {report_time} WIB")
+    else:
+        logger.warning("[REPORT] JobQueue not available, daily report disabled")
+
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
