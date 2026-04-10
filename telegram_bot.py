@@ -282,7 +282,8 @@ def col_to_letter(col_index):
 
 
 def ensure_sheet_headers(headers):
-    """Pastikan kolom wajib ada di Sheet. Tambahkan kalau belum ada."""
+    """Pastikan kolom wajib ada di Sheet. Tambahkan kalau belum ada.
+    Expand grid kalau perlu."""
     headers_lower = [h.strip().lower() for h in headers]
     missing = [h for h in REQUIRED_HEADERS if h.strip().lower() not in headers_lower]
     if not missing:
@@ -290,8 +291,32 @@ def ensure_sheet_headers(headers):
 
     try:
         service = get_sheets_service()
-        # Header ada di row 2 (index 1), tambah kolom baru setelah kolom terakhir
         start_col = len(headers)
+        needed_cols = start_col + len(missing)
+
+        # Get current grid size and expand if needed
+        sheet_meta = service.spreadsheets().get(
+            spreadsheetId=SPREADSHEET_ID,
+            fields="sheets.properties",
+        ).execute()
+        for s in sheet_meta.get("sheets", []):
+            if s["properties"]["title"] == SHEET_NAME:
+                current_cols = s["properties"]["gridProperties"]["columnCount"]
+                if needed_cols > current_cols:
+                    sheet_id = s["properties"]["sheetId"]
+                    service.spreadsheets().batchUpdate(
+                        spreadsheetId=SPREADSHEET_ID,
+                        body={"requests": [{
+                            "appendDimension": {
+                                "sheetId": sheet_id,
+                                "dimension": "COLUMNS",
+                                "length": needed_cols - current_cols,
+                            }
+                        }]},
+                    ).execute()
+                    logger.info(f"[SHEET] Expanded grid to {needed_cols} columns")
+                break
+
         for i, new_header in enumerate(missing):
             col_letter = col_to_letter(start_col + i)
             cell = f"'{SHEET_NAME}'!{col_letter}2"
@@ -459,7 +484,11 @@ def append_to_sheet(headers, col_map, brand, content_id, date_str,
         "effort": "Medium",
         "notes": f"QA: {qa_status}",
         "canva_link": "",
-        "visual_status": "Not Started",
+        "visual_status": (
+            "Ready for Visual" if content_type and content_type.lower() == "carousel"
+            else "Skip - Video Manual" if content_type and content_type.lower() in ("reel", "reels")
+            else "Not Started"
+        ),
     }
 
     for field, value in field_values.items():
