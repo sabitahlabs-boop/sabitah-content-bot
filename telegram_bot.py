@@ -42,7 +42,6 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SPREADSHEET_ID = os.environ.get("GOOGLE_SPREADSHEET_ID", "13_BnnBjVLRcpJAiyieBqF7tnuoRZ7ij7fs0u8Z9Hd1Y")
 REPORT_CHAT_ID = os.environ.get("REPORT_CHAT_ID", "")  # Telegram chat ID untuk daily report
-CANVA_ACCESS_TOKEN = os.environ.get("CANVA_ACCESS_TOKEN", "")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_NAME = "Master Tracker"
 
@@ -62,7 +61,6 @@ STATE_WAIT_DATE = "wait_date"
 STATE_WAIT_CONTENT_TYPE = "wait_content_type"
 STATE_WAIT_CONFIRM_NEW_BRAND = "wait_confirm_new_brand"
 STATE_WAIT_LINK_BRAND = "wait_link_brand"
-STATE_WAIT_CANVA_CONFIRM = "wait_canva_confirm"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -1016,7 +1014,7 @@ async def generate_with_qa(client, update, brand, topik, angle, content_type):
 
 
 # ============================================================
-# SHEET HELPERS (Canva Link & Visual Status)
+# SHEET HELPERS (Visual Status)
 # ============================================================
 
 
@@ -1045,34 +1043,6 @@ def update_sheet_visual_status(content_id, status):
                 return
     except Exception as e:
         logger.error(f"[SHEET] Failed to update visual status: {e}")
-
-
-def update_sheet_canva_link(content_id, canva_url):
-    """Update kolom Canva Link di Google Sheet untuk content_id tertentu."""
-    try:
-        headers, data_rows, _ = read_sheet_info()
-        col_map = get_header_index(headers)
-        canva_col = col_map.get("canva_link") or col_map.get("script_link")
-        if canva_col is None:
-            logger.warning("[CANVA] No canva_link or script_link column found")
-            return
-
-        cid_col = col_map.get("content_id", 1)
-        for row_idx, row in enumerate(data_rows):
-            if len(row) > cid_col and row[cid_col].strip() == content_id:
-                # Row di sheet = row_idx + 3 (baris 1=title, 2=header, 3+=data)
-                cell = f"'{SHEET_NAME}'!{col_to_letter(canva_col)}{row_idx + 3}"
-                service = get_sheets_service()
-                service.spreadsheets().values().update(
-                    spreadsheetId=SPREADSHEET_ID,
-                    range=cell,
-                    valueInputOption="RAW",
-                    body={"values": [[canva_url]]},
-                ).execute()
-                logger.info(f"[CANVA] Sheet updated: {cell} = {canva_url}")
-                return
-    except Exception as e:
-        logger.error(f"[CANVA] Failed to update sheet: {e}")
 
 
 # ============================================================
@@ -1352,10 +1322,6 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             await handle_link_brand_reply(update, context, session, text)
             return
 
-        if state == STATE_WAIT_CANVA_CONFIRM:
-            # Legacy state — just reset
-            reset_session(context)
-            return
 
         # ── STATE: IDLE — pesan baru ──
         logger.info(f"[INCOMING] user={update.effective_user.id} text={text!r}")
