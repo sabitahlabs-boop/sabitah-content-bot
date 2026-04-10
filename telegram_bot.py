@@ -68,6 +68,37 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def safe_json_loads(text, fallback=None):
+    """Parse JSON dengan sanitasi control characters dan strict=False.
+    Return fallback (default: dict kosong) kalau gagal."""
+    if fallback is None:
+        fallback = {}
+    if not text or not text.strip():
+        return fallback
+    try:
+        # Sanitasi: replace control chars di dalam JSON string values
+        # Pertama coba langsung
+        return json.loads(text, strict=False)
+    except json.JSONDecodeError:
+        pass
+    try:
+        # Replace literal control chars yang bukan bagian dari JSON structure
+        sanitized = text.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+        return json.loads(sanitized, strict=False)
+    except json.JSONDecodeError:
+        pass
+    try:
+        # Cari JSON object di dalam teks
+        match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
+        if match:
+            chunk = match.group(0).replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+            return json.loads(chunk, strict=False)
+    except json.JSONDecodeError:
+        pass
+    logger.warning(f"safe_json_loads gagal parse: {text[:200]!r}")
+    return fallback
+
+
 # ============================================================
 # BRAND GUIDELINES
 # ============================================================
@@ -77,12 +108,12 @@ def load_brand_guidelines():
     guidelines_json = os.environ.get("BRAND_GUIDELINES_JSON", "")
     if guidelines_json:
         logger.info(f"[BRAND] Loading guidelines dari env var BRAND_GUIDELINES_JSON ({len(guidelines_json)} chars)")
-        try:
-            data = json.loads(guidelines_json, strict=False)
+        data = safe_json_loads(guidelines_json)
+        if data:
             logger.info(f"[BRAND] Brands dari env: {list(data.keys())}")
             return data
-        except json.JSONDecodeError as e:
-            logger.error(f"[BRAND] Gagal parse BRAND_GUIDELINES_JSON: {e}")
+        else:
+            logger.error(f"[BRAND] Gagal parse BRAND_GUIDELINES_JSON")
             logger.error(f"[BRAND] JSON preview: {guidelines_json[:200]!r}")
             return {}
 
@@ -129,7 +160,7 @@ def get_google_credentials():
     google_token_json = os.environ.get("GOOGLE_TOKEN_JSON", "")
     if google_token_json:
         creds = Credentials.from_authorized_user_info(
-            json.loads(google_token_json), SCOPES
+            json.loads(google_token_json, strict=False), SCOPES
         )
         if not creds.valid and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -553,7 +584,7 @@ def get_tiktok_content(url):
             capture_output=True, text=True, timeout=30, encoding="utf-8"
         )
         if r.returncode == 0:
-            data = json.loads(r.stdout)
+            data = json.loads(r.stdout, strict=False)
             parts = []
             if data.get("title"):
                 parts.append(f"TITLE: {data['title']}")
@@ -1100,12 +1131,10 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             else:
                 json_text = re.sub(r"^```json\s*", "", extracted)
                 json_text = re.sub(r"\s*```$", "", json_text)
-                # Coba cari JSON object di response
-                json_match = re.search(r'\{[^{}]*\}', json_text, re.DOTALL)
-                if json_match:
-                    data = json.loads(json_match.group(0), strict=False)
-                else:
-                    data = json.loads(json_text, strict=False)
+                data = safe_json_loads(json_text)
+                if not data:
+                    logger.info("safe_json_loads returned empty, using fallback parser")
+                    data = fallback_parse(text)
         except Exception as e:
             logger.warning(f"Claude API/parse failed: {e}, using fallback parser")
             data = fallback_parse(text)
@@ -1369,11 +1398,10 @@ async def handle_link_message(update, context, session, links, full_text):
     analysis_raw = analyze_link_content(claude_client, content, source_label, link_url)
     logger.info(f"Link analysis: {analysis_raw}")
 
-    try:
-        json_text = re.sub(r"^```json\s*", "", analysis_raw)
-        json_text = re.sub(r"\s*```$", "", json_text)
-        inspiration = json.loads(json_text, strict=False)
-    except (json.JSONDecodeError, KeyError):
+    json_text = re.sub(r"^```json\s*", "", analysis_raw)
+    json_text = re.sub(r"\s*```$", "", json_text)
+    inspiration = safe_json_loads(json_text)
+    if not inspiration:
         await update.message.reply_text(
             "Gagal menganalisa konten. Coba kirim manual aja topik dan anglenya."
         )
@@ -1544,7 +1572,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Parse JSON
         json_text = re.sub(r"^```json\s*", "", extracted)
         json_text = re.sub(r"\s*```$", "", json_text)
-        data = json.loads(json_text, strict=False)
+        data = safe_json_loads(json_text)
 
         # Tampilkan deskripsi gambar
         img_desc = data.get("image_description", "")
