@@ -68,34 +68,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _extract_first_json_object(text):
+    """Extract JSON object pertama dari string, abaikan sisanya."""
+    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+    return match.group(0) if match else None
+
+
 def safe_json_loads(text, fallback=None):
-    """Parse JSON dengan sanitasi control characters dan strict=False.
+    """Parse JSON object pertama dari string. Abaikan teks sebelum/sesudah.
     Return fallback (default: dict kosong) kalau gagal."""
     if fallback is None:
         fallback = {}
     if not text or not text.strip():
         return fallback
+
+    # Step 1: Extract JSON object pertama dari teks
+    json_str = _extract_first_json_object(text)
+    if not json_str:
+        logger.warning(f"safe_json_loads: no JSON object found in: {text[:200]!r}")
+        return fallback
+
+    # Step 2: Coba parse langsung
     try:
-        # Sanitasi: replace control chars di dalam JSON string values
-        # Pertama coba langsung
-        return json.loads(text, strict=False)
+        return json.loads(json_str, strict=False)
     except json.JSONDecodeError:
         pass
+
+    # Step 3: Sanitasi control chars lalu coba lagi
     try:
-        # Replace literal control chars yang bukan bagian dari JSON structure
-        sanitized = text.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+        sanitized = json_str.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
         return json.loads(sanitized, strict=False)
     except json.JSONDecodeError:
         pass
-    try:
-        # Cari JSON object di dalam teks
-        match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
-        if match:
-            chunk = match.group(0).replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
-            return json.loads(chunk, strict=False)
-    except json.JSONDecodeError:
-        pass
-    logger.warning(f"safe_json_loads gagal parse: {text[:200]!r}")
+
+    logger.warning(f"safe_json_loads gagal parse: {json_str[:200]!r}")
     return fallback
 
 
@@ -1154,8 +1160,17 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
 
         logger.info(f"Parsed data: {data}")
 
+        # Validasi brand SEBELUM set di session
         if data.get("brand"):
-            session["brand"] = data["brand"]
+            known = get_all_known_brands()
+            known_lower = {b.lower(): b for b in known}
+            parsed_brand = data["brand"].strip()
+            if parsed_brand.lower() in known_lower:
+                session["brand"] = known_lower[parsed_brand.lower()]
+            else:
+                logger.info(f"Brand '{parsed_brand}' tidak ada di daftar, diabaikan")
+                data["brand"] = None  # jangan set di session
+
         if data.get("topik"):
             session["topik"] = data["topik"]
         if data.get("angle"):
@@ -1181,12 +1196,30 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
                 "Oke, aku tangkap:\n" + "\n".join(filled)
             )
 
-        if session.get("brand"):
-            _, _, brands = read_sheet_info()
-            brand_valid = await validate_brand(
-                update, context, session, session["brand"], brands
+        # Kalau brand dari parsing tidak valid, langsung tanya user
+        if data.get("brand") is None and not session.get("brand"):
+            all_brands = get_all_known_brands()
+            brand_list = ", ".join(sorted(all_brands))
+            session["state"] = STATE_WAIT_BRAND
+            await update.message.reply_text(
+                f"Brand tidak ditemukan dari pesanmu.\n\n"
+                f"Brand yang tersedia: {brand_list}\n\n"
+                f"Mau pakai yang mana?"
             )
-            if not brand_valid:
+            return
+
+        if session.get("brand"):
+            all_brands = get_all_known_brands()
+            known_lower = {b.lower(): b for b in all_brands}
+            if session["brand"].lower() not in known_lower:
+                brand_list = ", ".join(sorted(all_brands))
+                session["brand"] = None
+                session["state"] = STATE_WAIT_BRAND
+                await update.message.reply_text(
+                    f"Brand tidak ditemukan.\n\n"
+                    f"Brand yang tersedia: {brand_list}\n\n"
+                    f"Mau pakai yang mana?"
+                )
                 return
 
         _, _, brands = read_sheet_info()
@@ -1285,10 +1318,10 @@ def fallback_parse(text):
 
     text_lower = text.lower()
 
-    # 1) Detect brand — cari nama brand di dalam teks
+    # 1) Detect brand — cari nama brand EXACT (word boundary) di dalam teks
     brand = None
-    for b in all_brand_names:
-        if b.lower() in text_lower:
+    for b in sorted(all_brand_names, key=len, reverse=True):  # match terpanjang dulu
+        if re.search(r'\b' + re.escape(b.lower()) + r'\b', text_lower):
             brand = b
             break
 
