@@ -42,6 +42,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SPREADSHEET_ID = os.environ.get("GOOGLE_SPREADSHEET_ID", "13_BnnBjVLRcpJAiyieBqF7tnuoRZ7ij7fs0u8Z9Hd1Y")
 REPORT_CHAT_ID = os.environ.get("REPORT_CHAT_ID", "")  # Telegram chat ID untuk daily report
+CANVA_ACCESS_TOKEN = os.environ.get("CANVA_ACCESS_TOKEN", "")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_NAME = "Master Tracker"
 
@@ -61,6 +62,7 @@ STATE_WAIT_DATE = "wait_date"
 STATE_WAIT_CONTENT_TYPE = "wait_content_type"
 STATE_WAIT_CONFIRM_NEW_BRAND = "wait_confirm_new_brand"
 STATE_WAIT_LINK_BRAND = "wait_link_brand"
+STATE_WAIT_CANVA_CONFIRM = "wait_canva_confirm"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -280,6 +282,8 @@ def get_header_index(headers):
         "script owner": "script_owner",
         "script notes": "script_notes",
         "script link (google doc url)": "script_link",
+        "canva link": "canva_link",
+        "design link": "canva_link",
         "production status": "production_status",
         "production pic": "production_pic",
         "shooting date": "shooting_date",
@@ -936,6 +940,193 @@ async def generate_with_qa(client, update, brand, topik, angle, content_type):
 
 
 # ============================================================
+# CANVA CAROUSEL GENERATION
+# ============================================================
+CANVA_API_BASE = "https://api.canva.com/rest/v1"
+
+
+def parse_slides_from_script(script_text):
+    """Parse script menjadi list of slides [{title, body}]."""
+    slides = []
+    current_title = ""
+    current_lines = []
+
+    for line in script_text.split("\n"):
+        stripped = line.strip()
+        # Detect slide header: "SLIDE 1 (COVER):", "SLIDE 2:", dll
+        slide_match = re.match(r'^(?:\*\*)?SLIDE\s+\d+\s*(?:\([^)]*\))?[:\s]*(?:\*\*)?(.*)$', stripped, re.IGNORECASE)
+        if slide_match:
+            # Simpan slide sebelumnya
+            if current_title or current_lines:
+                slides.append({
+                    "title": current_title,
+                    "body": "\n".join(current_lines).strip(),
+                })
+            current_title = slide_match.group(1).strip().strip(":").strip() or ""
+            current_lines = []
+        elif stripped and not stripped.startswith("==="):
+            current_lines.append(stripped)
+
+    # Slide terakhir
+    if current_title or current_lines:
+        slides.append({
+            "title": current_title,
+            "body": "\n".join(current_lines).strip(),
+        })
+
+    return slides
+
+
+async def canva_create_design(title, num_pages=7):
+    """Buat desain baru di Canva via Connect API. Return design ID dan edit URL."""
+    if not CANVA_ACCESS_TOKEN:
+        raise ValueError("CANVA_ACCESS_TOKEN tidak di-set")
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Create design — Instagram Post square (1080x1080)
+        resp = await client.post(
+            f"{CANVA_API_BASE}/designs",
+            headers={
+                "Authorization": f"Bearer {CANVA_ACCESS_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "design_type": {"type": "preset", "name": "InstagramPost"},
+                "title": title,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        design = data.get("design", {})
+        design_id = design.get("id", "")
+        edit_url = design.get("urls", {}).get("edit_url", "")
+        view_url = design.get("urls", {}).get("view_url", "")
+
+        logger.info(f"[CANVA] Design created: {design_id}")
+
+        # Tambah halaman (design sudah punya 1 halaman, tambah sisanya)
+        for i in range(num_pages - 1):
+            try:
+                add_resp = await client.post(
+                    f"{CANVA_API_BASE}/designs/{design_id}/pages",
+                    headers={
+                        "Authorization": f"Bearer {CANVA_ACCESS_TOKEN}",
+                        "Content-Type": "application/json",
+                    },
+                    json={},
+                )
+                add_resp.raise_for_status()
+            except Exception as e:
+                logger.warning(f"[CANVA] Failed to add page {i+2}: {e}")
+
+        return design_id, edit_url, view_url
+
+
+async def canva_add_text_to_pages(design_id, slides):
+    """Tambah teks ke setiap halaman desain Canva."""
+    if not CANVA_ACCESS_TOKEN:
+        return
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Get pages
+        resp = await client.get(
+            f"{CANVA_API_BASE}/designs/{design_id}/pages",
+            headers={"Authorization": f"Bearer {CANVA_ACCESS_TOKEN}"},
+        )
+        if resp.status_code != 200:
+            logger.warning(f"[CANVA] Cannot get pages: {resp.status_code}")
+            return
+
+        pages = resp.json().get("items", [])
+
+        for i, page in enumerate(pages):
+            if i >= len(slides):
+                break
+            slide = slides[i]
+            page_id = page.get("id", "")
+
+            # Tambah title text element
+            elements = []
+            if slide["title"]:
+                elements.append({
+                    "type": "text",
+                    "text": slide["title"],
+                    "position": {"x": 50, "y": 80, "width": 980, "height": 150},
+                    "style": {"font_size": 48, "font_weight": "bold", "text_align": "center"},
+                })
+
+            # Tambah body text element
+            if slide["body"]:
+                y_pos = 280 if slide["title"] else 150
+                elements.append({
+                    "type": "text",
+                    "text": slide["body"],
+                    "position": {"x": 80, "y": y_pos, "width": 920, "height": 600},
+                    "style": {"font_size": 28, "text_align": "left"},
+                })
+
+            for elem in elements:
+                try:
+                    await client.post(
+                        f"{CANVA_API_BASE}/designs/{design_id}/pages/{page_id}/elements",
+                        headers={
+                            "Authorization": f"Bearer {CANVA_ACCESS_TOKEN}",
+                            "Content-Type": "application/json",
+                        },
+                        json=elem,
+                    )
+                except Exception as e:
+                    logger.warning(f"[CANVA] Failed to add element on page {i+1}: {e}")
+
+
+async def generate_canva_carousel(brand, topik, script_text):
+    """Full flow: create design + add text slides. Return (edit_url, view_url)."""
+    slides = parse_slides_from_script(script_text)
+    if not slides:
+        logger.warning("[CANVA] No slides parsed from script")
+        return None, None
+
+    num_slides = len(slides)
+    title = f"{brand} — {topik}"[:100]
+
+    logger.info(f"[CANVA] Creating carousel: {title} ({num_slides} slides)")
+    design_id, edit_url, view_url = await canva_create_design(title, num_slides)
+
+    if design_id:
+        await canva_add_text_to_pages(design_id, slides)
+
+    return edit_url, view_url
+
+
+def update_sheet_canva_link(content_id, canva_url):
+    """Update kolom Canva Link di Google Sheet untuk content_id tertentu."""
+    try:
+        headers, data_rows, _ = read_sheet_info()
+        col_map = get_header_index(headers)
+        canva_col = col_map.get("canva_link") or col_map.get("script_link")
+        if canva_col is None:
+            logger.warning("[CANVA] No canva_link or script_link column found")
+            return
+
+        cid_col = col_map.get("content_id", 1)
+        for row_idx, row in enumerate(data_rows):
+            if len(row) > cid_col and row[cid_col].strip() == content_id:
+                # Row di sheet = row_idx + 3 (baris 1=title, 2=header, 3+=data)
+                cell = f"'{SHEET_NAME}'!{chr(65 + canva_col)}{row_idx + 3}"
+                service = get_sheets_service()
+                service.spreadsheets().values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=cell,
+                    valueInputOption="RAW",
+                    body={"values": [[canva_url]]},
+                ).execute()
+                logger.info(f"[CANVA] Sheet updated: {cell} = {canva_url}")
+                return
+    except Exception as e:
+        logger.error(f"[CANVA] Failed to update sheet: {e}")
+
+
+# ============================================================
 # VOICE NOTE → TEXT
 # ============================================================
 async def voice_to_text(file_url: str) -> str:
@@ -1095,6 +1286,18 @@ async def finalize_and_generate(update, context, session):
 
         logger.info(f"Processed {content_id}: {brand} - {topik} | QA: {qa_status}")
 
+        # Tanya user apakah mau generate Canva (hanya untuk Carousel)
+        if content_type == "Carousel" and CANVA_ACCESS_TOKEN:
+            session["_content_id"] = content_id
+            session["_script"] = script
+            session["state"] = STATE_WAIT_CANVA_CONFIRM
+            await update.message.reply_text(
+                "🎨 Mau sekalian generate desain carousel di Canva?\n"
+                "Ketik *ya* atau *tidak*.",
+                parse_mode="Markdown",
+            )
+            return  # jangan reset session dulu
+
     except Exception as e:
         logger.error(f"Error in finalize: {e}", exc_info=True)
         await update.message.reply_text(f"Terjadi error saat generate:\n{str(e)}")
@@ -1198,6 +1401,10 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
 
         if state == STATE_WAIT_LINK_BRAND:
             await handle_link_brand_reply(update, context, session, text)
+            return
+
+        if state == STATE_WAIT_CANVA_CONFIRM:
+            await handle_canva_confirm(update, context, session, text)
             return
 
         # ── STATE: IDLE — pesan baru ──
@@ -1757,6 +1964,54 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await update.message.reply_text(f"Gagal proses voice note:\n{error_msg}")
+
+
+async def handle_canva_confirm(update, context, session, text):
+    """Handle jawaban ya/tidak untuk generate Canva carousel."""
+    answer = text.strip().lower()
+
+    if answer in ("ya", "yes", "y", "oke", "ok", "iya", "yoi", "mau", "boleh"):
+        brand = session.get("brand", "")
+        topik = session.get("topik", "")
+        content_id = session.get("_content_id", "")
+        script = session.get("_script", "")
+
+        await update.message.reply_text("🎨 Generating desain carousel di Canva...")
+
+        try:
+            edit_url, view_url = await generate_canva_carousel(brand, topik, script)
+
+            if edit_url:
+                # Update Google Sheet
+                if content_id:
+                    update_sheet_canva_link(content_id, edit_url)
+
+                await update.message.reply_text(
+                    f"🎨 Desain carousel sudah jadi!\n\n"
+                    f"✏️ Edit: {edit_url}\n"
+                    f"👁 View: {view_url or edit_url}\n\n"
+                    f"Link sudah disimpan ke Google Sheet."
+                )
+            else:
+                await update.message.reply_text(
+                    "⚠️ Desain Canva dibuat tapi gagal dapat URL.\n"
+                    "Cek di akun Canva kamu langsung."
+                )
+        except Exception as e:
+            logger.error(f"[CANVA] Error: {e}", exc_info=True)
+            await update.message.reply_text(f"❌ Gagal generate Canva:\n{str(e)}")
+
+    elif answer in ("tidak", "no", "n", "nggak", "gak", "skip", "ga"):
+        await update.message.reply_text("Oke, skip Canva. Script sudah tersimpan di Google Sheet. ✅")
+
+    else:
+        await update.message.reply_text(
+            "Ketik *ya* untuk generate desain Canva, atau *tidak* untuk skip.",
+            parse_mode="Markdown",
+        )
+        return  # jangan reset session
+
+    reset_session(context)
 
 
 # ============================================================
