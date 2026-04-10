@@ -69,9 +69,34 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_first_json_object(text):
-    """Extract JSON object pertama dari string, abaikan sisanya."""
-    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
-    return match.group(0) if match else None
+    """Extract JSON object pertama dari string pakai brace counting.
+    Support nested braces dan string values yang mengandung braces."""
+    start = text.find('{')
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if escape:
+            escape = False
+            continue
+        if c == '\\' and in_string:
+            escape = True
+            continue
+        if c == '"' and not escape:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
 
 
 def safe_json_loads(text, fallback=None):
@@ -88,20 +113,22 @@ def safe_json_loads(text, fallback=None):
         logger.warning(f"safe_json_loads: no JSON object found in: {text[:200]!r}")
         return fallback
 
+    logger.info(f"safe_json_loads: extracted {len(json_str)} chars JSON")
+
     # Step 2: Coba parse langsung
     try:
         return json.loads(json_str, strict=False)
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e:
+        logger.warning(f"safe_json_loads: direct parse failed: {e}")
 
     # Step 3: Sanitasi control chars lalu coba lagi
     try:
         sanitized = json_str.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
         return json.loads(sanitized, strict=False)
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e:
+        logger.warning(f"safe_json_loads: sanitized parse failed: {e}")
 
-    logger.warning(f"safe_json_loads gagal parse: {json_str[:200]!r}")
+    logger.warning(f"safe_json_loads gagal parse: {json_str[:300]!r}")
     return fallback
 
 
@@ -302,14 +329,51 @@ def get_next_content_id(data_rows, brand):
 
 def extract_brief_and_script(full_output):
     """Pisahkan content brief dan script dari output Claude."""
-    brief = ""
-    script = full_output
+    text = full_output.strip()
 
-    if "=== CONTENT BRIEF ===" in full_output and "=== SCRIPT ===" in full_output:
-        parts = full_output.split("=== SCRIPT ===")
-        brief_part = parts[0].replace("=== CONTENT BRIEF ===", "").strip()
-        script_part = parts[1].strip() if len(parts) > 1 else ""
-        return brief_part, script_part
+    # Coba berbagai separator yang mungkin dipakai Claude
+    brief_markers = ["=== CONTENT BRIEF ===", "## CONTENT BRIEF", "**CONTENT BRIEF**",
+                     "CONTENT BRIEF:", "CONTENT BRIEF"]
+    script_markers = ["=== SCRIPT ===", "## SCRIPT", "**SCRIPT**",
+                      "SCRIPT:", "SLIDE 1"]
+
+    brief = ""
+    script = text
+
+    # Cari posisi brief dan script markers
+    brief_pos = -1
+    brief_marker_len = 0
+    for marker in brief_markers:
+        pos = text.upper().find(marker.upper())
+        if pos != -1:
+            brief_pos = pos
+            brief_marker_len = len(marker)
+            break
+
+    script_pos = -1
+    for marker in script_markers:
+        pos = text.upper().find(marker.upper())
+        if pos != -1 and (brief_pos == -1 or pos > brief_pos):
+            script_pos = pos
+            break
+
+    if brief_pos != -1 and script_pos != -1:
+        brief = text[brief_pos + brief_marker_len:script_pos].strip().strip("=-#* ")
+        script = text[script_pos:].strip()
+    elif script_pos != -1:
+        # Tidak ada brief section, tapi ada script
+        brief = ""
+        script = text[script_pos:].strip()
+
+    # Kalau brief masih kosong, buat ringkasan dari slide pertama
+    if not brief and script:
+        lines = [l.strip() for l in script.split('\n') if l.strip() and not l.strip().startswith('SLIDE') and not l.strip().startswith('===')]
+        # Ambil beberapa baris pertama sebagai brief
+        brief_lines = lines[:3]
+        if brief_lines:
+            brief = " ".join(brief_lines)
+            if len(brief) > 300:
+                brief = brief[:297] + "..."
 
     return brief, script
 
@@ -318,6 +382,9 @@ def append_to_sheet(headers, col_map, brand, content_id, date_str,
                     content_type, topik, angle, full_output, qa_status):
     """Tambah baris baru sesuai kolom header yang ada."""
     brief, script = extract_brief_and_script(full_output)
+    logger.info(f"[SHEET] Brief length: {len(brief)}, Script length: {len(script)}")
+    logger.info(f"[SHEET] Brief preview: {brief[:150]!r}")
+    logger.info(f"[SHEET] Col map: {col_map}")
     new_row = [""] * len(headers)
 
     field_values = {
@@ -1585,22 +1652,37 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         extracted = analyze_image(claude_client, image_bytes, media_type, caption)
         logger.info(f"Image analysis: {extracted}")
 
-        # Parse JSON
-        json_text = re.sub(r"^```json\s*", "", extracted)
-        json_text = re.sub(r"\s*```$", "", json_text)
-        data = safe_json_loads(json_text)
+        # Parse JSON — safe_json_loads handles semua edge cases
+        logger.info(f"Raw Claude image response: {extracted[:500]!r}")
+        data = safe_json_loads(extracted)
+
+        if not data:
+            logger.warning("Image analysis returned empty data")
+            await update.message.reply_text(
+                "Aku terima gambarnya, tapi gagal extract info.\n"
+                "Coba ketik aja pesannya, misal: \"Bikin konten Playpod tentang ...\""
+            )
+            return
 
         # Tampilkan deskripsi gambar
         img_desc = data.get("image_description", "")
-        await update.message.reply_text(
-            f"Hasil analisis gambar:\n\"{img_desc}\""
-        )
+        if img_desc:
+            await update.message.reply_text(
+                f"Hasil analisis gambar:\n\"{img_desc}\""
+            )
 
         # Isi session dengan data yang di-extract
         session = get_session(context)
 
+        # Validasi brand sebelum set di session
         if data.get("brand"):
-            session["brand"] = data["brand"]
+            known = get_all_known_brands()
+            known_lower = {b.lower(): b for b in known}
+            if data["brand"].lower() in known_lower:
+                session["brand"] = known_lower[data["brand"].lower()]
+            else:
+                logger.info(f"Image brand '{data['brand']}' tidak valid, diabaikan")
+
         if data.get("topik"):
             session["topik"] = data["topik"]
         if data.get("angle"):
@@ -1621,25 +1703,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Dari gambar, aku tangkap:\n" + "\n".join(filled)
             )
 
-        # Validasi brand & tanya yang kurang
-        if session.get("brand"):
-            _, _, brands = read_sheet_info()
-            brand_valid = await validate_brand(
-                update, context, session, session["brand"], brands
-            )
-            if not brand_valid:
-                return
-
         _, _, brands = read_sheet_info()
         if not await ask_next_missing(update, context, session, brands):
             await finalize_and_generate(update, context, session)
 
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.error(f"Error parsing image analysis: {e}", exc_info=True)
-        await update.message.reply_text(
-            "Maaf, aku gagal menganalisis gambar ini.\n"
-            "Coba kirim ulang, atau ketik aja pesannya."
-        )
     except Exception as e:
         logger.error(f"Error processing photo: {e}", exc_info=True)
         await update.message.reply_text(f"Gagal proses foto:\n{str(e)}")
