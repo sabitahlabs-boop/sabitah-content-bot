@@ -76,12 +76,24 @@ def load_brand_guidelines():
     # Prioritas 1: Env var (Railway)
     guidelines_json = os.environ.get("BRAND_GUIDELINES_JSON", "")
     if guidelines_json:
-        return json.loads(guidelines_json)
+        logger.info(f"[BRAND] Loading guidelines dari env var BRAND_GUIDELINES_JSON ({len(guidelines_json)} chars)")
+        try:
+            data = json.loads(guidelines_json, strict=False)
+            logger.info(f"[BRAND] Brands dari env: {list(data.keys())}")
+            return data
+        except json.JSONDecodeError as e:
+            logger.error(f"[BRAND] Gagal parse BRAND_GUIDELINES_JSON: {e}")
+            logger.error(f"[BRAND] JSON preview: {guidelines_json[:200]!r}")
+            return {}
 
     # Prioritas 2: File lokal
     if os.path.exists(BRAND_GUIDELINES_FILE):
         with open(BRAND_GUIDELINES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            logger.info(f"[BRAND] Brands dari file: {list(data.keys())}")
+            return data
+
+    logger.warning("[BRAND] Tidak ada brand guidelines (env var maupun file)")
     return {}
 
 
@@ -1091,9 +1103,9 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
                 # Coba cari JSON object di response
                 json_match = re.search(r'\{[^{}]*\}', json_text, re.DOTALL)
                 if json_match:
-                    data = json.loads(json_match.group(0))
+                    data = json.loads(json_match.group(0), strict=False)
                 else:
-                    data = json.loads(json_text)
+                    data = json.loads(json_text, strict=False)
         except Exception as e:
             logger.warning(f"Claude API/parse failed: {e}, using fallback parser")
             data = fallback_parse(text)
@@ -1360,7 +1372,7 @@ async def handle_link_message(update, context, session, links, full_text):
     try:
         json_text = re.sub(r"^```json\s*", "", analysis_raw)
         json_text = re.sub(r"\s*```$", "", json_text)
-        inspiration = json.loads(json_text)
+        inspiration = json.loads(json_text, strict=False)
     except (json.JSONDecodeError, KeyError):
         await update.message.reply_text(
             "Gagal menganalisa konten. Coba kirim manual aja topik dan anglenya."
@@ -1532,7 +1544,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Parse JSON
         json_text = re.sub(r"^```json\s*", "", extracted)
         json_text = re.sub(r"\s*```$", "", json_text)
-        data = json.loads(json_text)
+        data = json.loads(json_text, strict=False)
 
         # Tampilkan deskripsi gambar
         img_desc = data.get("image_description", "")
