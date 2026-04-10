@@ -1016,92 +1016,35 @@ async def generate_with_qa(client, update, brand, topik, angle, content_type):
 
 
 # ============================================================
-# CANVA CAROUSEL GENERATION
+# SHEET HELPERS (Canva Link & Visual Status)
 # ============================================================
-CANVA_API_BASE = "https://api.canva.com/rest/v1"
 
 
-def parse_slides_from_script(script_text):
-    """Parse script menjadi list of slides [{title, body}]."""
-    slides = []
-    current_title = ""
-    current_lines = []
+def update_sheet_visual_status(content_id, status):
+    """Update kolom Visual Status di Google Sheet untuk content_id tertentu."""
+    try:
+        headers, data_rows, _ = read_sheet_info()
+        col_map = get_header_index(headers)
+        vs_col = col_map.get("visual_status")
+        if vs_col is None:
+            logger.warning("[SHEET] No visual_status column found")
+            return
 
-    for line in script_text.split("\n"):
-        stripped = line.strip()
-        # Detect slide header: "SLIDE 1 (COVER):", "SLIDE 2:", dll
-        slide_match = re.match(r'^(?:\*\*)?SLIDE\s+\d+\s*(?:\([^)]*\))?[:\s]*(?:\*\*)?(.*)$', stripped, re.IGNORECASE)
-        if slide_match:
-            # Simpan slide sebelumnya
-            if current_title or current_lines:
-                slides.append({
-                    "title": current_title,
-                    "body": "\n".join(current_lines).strip(),
-                })
-            current_title = slide_match.group(1).strip().strip(":").strip() or ""
-            current_lines = []
-        elif stripped and not stripped.startswith("==="):
-            current_lines.append(stripped)
-
-    # Slide terakhir
-    if current_title or current_lines:
-        slides.append({
-            "title": current_title,
-            "body": "\n".join(current_lines).strip(),
-        })
-
-    return slides
-
-
-async def canva_create_design(title, num_pages=7):
-    """Buat desain baru di Canva via Connect API (1080x1080 IG Square).
-    Return (design_id, edit_url, view_url).
-    Note: Connect API tidak support add pages atau text elements secara langsung.
-    Design dibuat sebagai canvas kosong — user edit manual atau pakai Brand Template + Autofill."""
-    if not CANVA_ACCESS_TOKEN:
-        raise ValueError("CANVA_ACCESS_TOKEN tidak di-set")
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{CANVA_API_BASE}/designs",
-            headers={
-                "Authorization": f"Bearer {CANVA_ACCESS_TOKEN}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "design_type": {
-                    "type": "custom",
-                    "width": 1080,
-                    "height": 1080,
-                },
-                "title": title,
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        design = data.get("design", {})
-        design_id = design.get("id", "")
-        edit_url = design.get("urls", {}).get("edit_url", "")
-        view_url = design.get("urls", {}).get("view_url", "")
-
-        logger.info(f"[CANVA] Design created: {design_id}")
-        return design_id, edit_url, view_url
-
-
-async def generate_canva_carousel(brand, topik, script_text):
-    """Create design + kirim script sebagai referensi. Return (edit_url, view_url).
-    Script dikirim ke user via chat sebagai panduan konten per slide."""
-    slides = parse_slides_from_script(script_text)
-    if not slides:
-        logger.warning("[CANVA] No slides parsed from script")
-        return None, None
-
-    title = f"{brand} — {topik}"[:100]
-
-    logger.info(f"[CANVA] Creating carousel: {title} ({len(slides)} slides)")
-    design_id, edit_url, view_url = await canva_create_design(title)
-
-    return edit_url, view_url
+        cid_col = col_map.get("content_id", 1)
+        for row_idx, row in enumerate(data_rows):
+            if len(row) > cid_col and row[cid_col].strip() == content_id:
+                cell = f"'{SHEET_NAME}'!{col_to_letter(vs_col)}{row_idx + 3}"
+                service = get_sheets_service()
+                service.spreadsheets().values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=cell,
+                    valueInputOption="RAW",
+                    body={"values": [[status]]},
+                ).execute()
+                logger.info(f"[SHEET] Visual Status updated: {cell} = {status}")
+                return
+    except Exception as e:
+        logger.error(f"[SHEET] Failed to update visual status: {e}")
 
 
 def update_sheet_canva_link(content_id, canva_url):
@@ -1292,17 +1235,17 @@ async def finalize_and_generate(update, context, session):
 
         logger.info(f"Processed {content_id}: {brand} - {topik} | QA: {qa_status}")
 
-        # Tanya user apakah mau generate Canva (hanya untuk Carousel)
-        if content_type == "Carousel" and CANVA_ACCESS_TOKEN:
-            session["_content_id"] = content_id
-            session["_script"] = script
-            session["state"] = STATE_WAIT_CANVA_CONFIRM
+        # Update Visual Status & notify for Carousel
+        if content_type == "Carousel":
+            if content_id:
+                update_sheet_visual_status(content_id, "Ready for Visual")
             await update.message.reply_text(
-                "🎨 Mau sekalian generate desain carousel di Canva?\n"
-                "Ketik *ya* atau *tidak*.",
+                f"✅ Script carousel {brand} sudah jadi dan tersimpan di tracker.\n\n"
+                f"Untuk generate visual, buka Claude.ai Project "
+                f"'Brand Visual Generator' dan ketik:\n"
+                f"*generate carousel dari tracker*",
                 parse_mode="Markdown",
             )
-            return  # jangan reset session dulu
 
     except Exception as e:
         logger.error(f"Error in finalize: {e}", exc_info=True)
@@ -1410,7 +1353,8 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             return
 
         if state == STATE_WAIT_CANVA_CONFIRM:
-            await handle_canva_confirm(update, context, session, text)
+            # Legacy state — just reset
+            reset_session(context)
             return
 
         # ── STATE: IDLE — pesan baru ──
@@ -1972,52 +1916,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Gagal proses voice note:\n{error_msg}")
 
 
-async def handle_canva_confirm(update, context, session, text):
-    """Handle jawaban ya/tidak untuk generate Canva carousel."""
-    answer = text.strip().lower()
 
-    if answer in ("ya", "yes", "y", "oke", "ok", "iya", "yoi", "mau", "boleh"):
-        brand = session.get("brand", "")
-        topik = session.get("topik", "")
-        content_id = session.get("_content_id", "")
-        script = session.get("_script", "")
 
-        await update.message.reply_text("🎨 Generating desain carousel di Canva...")
-
-        try:
-            edit_url, view_url = await generate_canva_carousel(brand, topik, script)
-
-            if edit_url:
-                # Update Google Sheet
-                if content_id:
-                    update_sheet_canva_link(content_id, edit_url)
-
-                await update.message.reply_text(
-                    f"🎨 Desain carousel sudah jadi!\n\n"
-                    f"✏️ Edit: {edit_url}\n"
-                    f"👁 View: {view_url or edit_url}\n\n"
-                    f"Link sudah disimpan ke Google Sheet."
-                )
-            else:
-                await update.message.reply_text(
-                    "⚠️ Desain Canva dibuat tapi gagal dapat URL.\n"
-                    "Cek di akun Canva kamu langsung."
-                )
-        except Exception as e:
-            logger.error(f"[CANVA] Error: {e}", exc_info=True)
-            await update.message.reply_text(f"❌ Gagal generate Canva:\n{str(e)}")
-
-    elif answer in ("tidak", "no", "n", "nggak", "gak", "skip", "ga"):
-        await update.message.reply_text("Oke, skip Canva. Script sudah tersimpan di Google Sheet. ✅")
-
-    else:
-        await update.message.reply_text(
-            "Ketik *ya* untuk generate desain Canva, atau *tidak* untuk skip.",
-            parse_mode="Markdown",
-        )
-        return  # jangan reset session
-
-    reset_session(context)
 
 
 # ============================================================
