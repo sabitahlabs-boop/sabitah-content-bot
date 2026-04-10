@@ -1065,6 +1065,7 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             return
 
         # ── STATE: IDLE — pesan baru ──
+        logger.info(f"[INCOMING] user={update.effective_user.id} text={text!r}")
 
         # Cek apakah ada link YouTube / Instagram
         links = detect_links(text)
@@ -1074,22 +1075,30 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
 
         await update.message.reply_text("Menganalisis pesan kamu...")
 
-        claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        extracted = extract_content_info(claude_client, text)
-        logger.info(f"Extracted: {extracted}")
+        # Coba parsing via Claude API, fallback ke local parser kalau gagal
+        data = None
+        try:
+            claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            extracted = extract_content_info(claude_client, text)
+            logger.info(f"Claude extracted: {extracted}")
 
-        if "UNCLEAR" in extracted and "{" not in extracted:
-            await update.message.reply_text(
-                "Hmm, aku belum bisa tangkap info kontennya.\n\n"
-                "Coba kirim lagi dengan info lebih jelas, misalnya:\n"
-                "\"Bikin konten Playpod tentang dating spot, anglenya anti-awkward, "
-                "carousel, posting 15 April\""
-            )
-            return
+            if "UNCLEAR" in extracted and "{" not in extracted:
+                logger.info("Claude returned UNCLEAR, using fallback parser")
+                data = fallback_parse(text)
+            else:
+                json_text = re.sub(r"^```json\s*", "", extracted)
+                json_text = re.sub(r"\s*```$", "", json_text)
+                # Coba cari JSON object di response
+                json_match = re.search(r'\{[^{}]*\}', json_text, re.DOTALL)
+                if json_match:
+                    data = json.loads(json_match.group(0))
+                else:
+                    data = json.loads(json_text)
+        except Exception as e:
+            logger.warning(f"Claude API/parse failed: {e}, using fallback parser")
+            data = fallback_parse(text)
 
-        json_text = re.sub(r"^```json\s*", "", extracted)
-        json_text = re.sub(r"\s*```$", "", json_text)
-        data = json.loads(json_text)
+        logger.info(f"Parsed data: {data}")
 
         if data.get("brand"):
             session["brand"] = data["brand"]
@@ -1103,6 +1112,10 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             ct = match_content_type(data["content_type"])
             if ct:
                 session["content_type"] = ct
+
+        # Kalau belum ada topik sama sekali, pakai seluruh teks sebagai topik
+        if not session.get("topik") and not session.get("brand"):
+            session["topik"] = text
 
         filled = []
         for f in ["brand", "topik", "angle", "date", "content_type"]:
@@ -1126,12 +1139,6 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
         if not await ask_next_missing(update, context, session, brands):
             await finalize_and_generate(update, context, session)
 
-    except (json.JSONDecodeError, KeyError):
-        await update.message.reply_text(
-            "Maaf, aku gagal memahami pesanmu.\n"
-            "Coba kirim ulang dengan menyebutkan brand, topik, dan angle."
-        )
-        reset_session(context)
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         await update.message.reply_text(f"Terjadi error:\n{str(e)}")
@@ -1228,6 +1235,88 @@ def match_content_type(text):
         if key in text_lower:
             return val
     return None
+
+
+def fallback_parse(text):
+    """Fallback parser: extract brand/topik/angle dari teks tanpa Claude API.
+    Lebih baik tebak dari konteks daripada gagal."""
+    guidelines = load_brand_guidelines()
+    all_brand_names = list(guidelines.keys())
+    # Tambahkan brand dari known prefixes
+    known_brands = [
+        "Playpod", "Sabitah", "County", "Legus", "Defarchy",
+        "Happy Baby", "Personal Brand Dimas",
+    ]
+    for b in known_brands:
+        if b not in all_brand_names:
+            all_brand_names.append(b)
+
+    text_lower = text.lower()
+
+    # 1) Detect brand — cari nama brand di dalam teks
+    brand = None
+    for b in all_brand_names:
+        if b.lower() in text_lower:
+            brand = b
+            break
+
+    # 2) Detect content type
+    content_type = match_content_type(text)
+
+    # 3) Detect date — pattern sederhana
+    date = None
+    date_match = re.search(
+        r'(\d{1,2}\s+(?:jan|feb|mar|apr|mei|may|jun|jul|aug|agu|sep|okt|oct|nov|des|dec)\w*'
+        r'|(?:jan|feb|mar|apr|mei|may|jun|jul|aug|agu|sep|okt|oct|nov|des|dec)\w*\s+\d{1,2})',
+        text_lower,
+    )
+    if date_match:
+        date = date_match.group(0).strip()
+
+    # 4) Detect angle — cari setelah kata "angle", "hook", "sudut pandang"
+    angle = None
+    angle_match = re.search(
+        r'(?:angle|hook|sudut pandang)[:\s]+(.+?)(?:,|$|\.|content type|tipe|tanggal|posting)',
+        text_lower,
+    )
+    if angle_match:
+        angle = angle_match.group(1).strip().strip('"\'')
+
+    # 5) Sisanya jadi topik — hapus brand, angle, date, content type dari teks
+    topik_text = text
+    # Hapus brand name
+    if brand:
+        topik_text = re.sub(re.escape(brand), "", topik_text, flags=re.IGNORECASE).strip()
+    # Hapus kata-kata umum di awal
+    topik_text = re.sub(
+        r'^(?:bikin(?:kan)?|buat(?:kan)?|tolong|mau|coba|generate|konten|content)\s+',
+        '', topik_text, flags=re.IGNORECASE,
+    ).strip()
+    topik_text = re.sub(
+        r'^(?:bikin(?:kan)?|buat(?:kan)?|tolong|mau|coba|generate|konten|content)\s+',
+        '', topik_text, flags=re.IGNORECASE,
+    ).strip()
+    # Hapus content type keywords
+    for ct_word in ["carousel", "reel", "reels", "single post", "story", "stories"]:
+        topik_text = re.sub(r'\b' + ct_word + r'\b', '', topik_text, flags=re.IGNORECASE)
+    # Hapus angle part
+    if angle_match:
+        topik_text = topik_text[:angle_match.start()] + topik_text[angle_match.end():]
+    # Hapus date part
+    if date_match:
+        topik_text = topik_text[:date_match.start()] + topik_text[date_match.end():]
+    # Cleanup
+    topik_text = re.sub(r'[,\s]+', ' ', topik_text).strip().strip(',-. ')
+
+    topik = topik_text if topik_text else None
+
+    return {
+        "brand": brand,
+        "topik": topik,
+        "angle": angle,
+        "date": date,
+        "content_type": content_type,
+    }
 
 
 async def handle_link_message(update, context, session, links, full_text):
