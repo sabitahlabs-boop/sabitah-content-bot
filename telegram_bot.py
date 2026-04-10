@@ -156,19 +156,32 @@ def format_guidelines_text(brand, guidelines):
 # ============================================================
 def get_google_credentials():
     """Buat Google credentials dari env vars atau file lokal."""
-    # Prioritas 1: Env vars (Railway deployment)
+    # Prioritas 1: Service Account (Railway — recommended)
+    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    if sa_json:
+        from google.oauth2 import service_account
+        info = json.loads(sa_json, strict=False)
+        logger.info(f"[GOOGLE] Pakai Service Account: {info.get('client_email', '?')}")
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+
+    # Prioritas 2: OAuth token env var (fallback — cek apakah service account atau OAuth)
     google_token_json = os.environ.get("GOOGLE_TOKEN_JSON", "")
     if google_token_json:
-        creds = Credentials.from_authorized_user_info(
-            json.loads(google_token_json, strict=False), SCOPES
-        )
+        info = json.loads(google_token_json, strict=False)
+        # Cek apakah ini service account
+        if info.get("type") == "service_account":
+            from google.oauth2 import service_account
+            logger.info(f"[GOOGLE] GOOGLE_TOKEN_JSON berisi Service Account: {info.get('client_email', '?')}")
+            return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        # OAuth token biasa
+        logger.info("[GOOGLE] Pakai OAuth token dari GOOGLE_TOKEN_JSON")
+        creds = Credentials.from_authorized_user_info(info, SCOPES)
         if not creds.valid and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            # Update env var dengan token baru (untuk session ini)
             os.environ["GOOGLE_TOKEN_JSON"] = creds.to_json()
         return creds
 
-    # Prioritas 2: File lokal (development)
+    # Prioritas 3: File lokal (development)
     token_file = os.path.join(SCRIPT_DIR, "token.json")
     oauth_file = os.path.join(SCRIPT_DIR, "oauth_credentials.json")
 
@@ -1186,13 +1199,25 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
         reset_session(context)
 
 
-async def validate_brand(update, context, session, brand_input, brands):
-    """Validasi brand terhadap Sheet + guidelines."""
-    # Gabungkan brand dari sheet dan guidelines
+def get_all_known_brands():
+    """Return set semua brand yang valid (dari guidelines + sheet)."""
     guidelines = load_brand_guidelines()
-    all_brands = set(brands)
-    for g_brand in guidelines.keys():
-        all_brands.add(g_brand)
+    all_brands = set(guidelines.keys())
+    # Tambahkan known brands yang mungkin belum ada di guidelines
+    for b in ["Sabitah", "County", "LEGUS", "Defarchy", "Playpod",
+              "Happy Baby", "Personal Brand Dimas"]:
+        all_brands.add(b)
+    try:
+        _, _, sheet_brands = read_sheet_info()
+        all_brands.update(sheet_brands)
+    except Exception:
+        pass
+    return all_brands
+
+
+async def validate_brand(update, context, session, brand_input, brands):
+    """Validasi brand — harus ada di daftar, tidak boleh tebak."""
+    all_brands = get_all_known_brands()
 
     brands_lower = {b.lower(): b for b in all_brands}
     if brand_input.lower() in brands_lower:
@@ -1200,22 +1225,18 @@ async def validate_brand(update, context, session, brand_input, brands):
         return True
 
     brand_list = ", ".join(sorted(all_brands)) if all_brands else "(belum ada brand)"
-    session["_pending_brand"] = brand_input
-    session["state"] = STATE_WAIT_CONFIRM_NEW_BRAND
+    session["brand"] = None  # reset brand yang salah
+    session["state"] = STATE_WAIT_BRAND
     await update.message.reply_text(
-        f"Brand \"{brand_input}\" belum ada di tracker.\n\n"
+        f"Brand \"{brand_input}\" tidak ditemukan.\n\n"
         f"Brand yang tersedia: {brand_list}\n\n"
-        f"Mau pakai yang mana, atau ketik \"baru\" untuk buat brand baru?"
+        f"Mau pakai yang mana?"
     )
     return False
 
 
 async def handle_brand_reply(update, context, session, text):
-    _, _, brands = read_sheet_info()
-    guidelines = load_brand_guidelines()
-    all_brands = set(brands)
-    for g_brand in guidelines.keys():
-        all_brands.add(g_brand)
+    all_brands = get_all_known_brands()
 
     brands_lower = {b.lower(): b for b in all_brands}
     if text.lower() in brands_lower:
@@ -1224,40 +1245,19 @@ async def handle_brand_reply(update, context, session, text):
             await finalize_and_generate(update, context, session)
         return
 
-    brand_valid = await validate_brand(update, context, session, text, brands)
-    if brand_valid:
-        if not await ask_next_missing(update, context, session, all_brands):
-            await finalize_and_generate(update, context, session)
+    # Brand tidak dikenali — tanya ulang
+    brand_list = ", ".join(sorted(all_brands))
+    await update.message.reply_text(
+        f"Brand \"{text}\" tidak ditemukan.\n\n"
+        f"Brand yang tersedia: {brand_list}\n\n"
+        f"Mau pakai yang mana?"
+    )
 
 
 async def handle_new_brand_confirm(update, context, session, text):
-    _, _, brands = read_sheet_info()
-    guidelines = load_brand_guidelines()
-    all_brands = set(brands)
-    for g_brand in guidelines.keys():
-        all_brands.add(g_brand)
-
-    if text.lower() == "baru":
-        session["brand"] = session.pop("_pending_brand", text)
-        await update.message.reply_text(f"Oke, pakai brand baru: {session['brand']}")
-        if not await ask_next_missing(update, context, session, all_brands):
-            await finalize_and_generate(update, context, session)
-        return
-
-    brands_lower = {b.lower(): b for b in all_brands}
-    if text.lower() in brands_lower:
-        session["brand"] = brands_lower[text.lower()]
-        session.pop("_pending_brand", None)
-        if not await ask_next_missing(update, context, session, all_brands):
-            await finalize_and_generate(update, context, session)
-        return
-
-    brand_list = ", ".join(sorted(all_brands)) if all_brands else "(belum ada brand)"
-    await update.message.reply_text(
-        f"\"{text}\" tidak dikenali.\n\n"
-        f"Brand yang tersedia: {brand_list}\n"
-        f"Atau ketik \"baru\" untuk pakai brand baru."
-    )
+    """Redirect ke handle_brand_reply — tidak ada opsi 'baru' lagi."""
+    session["state"] = STATE_WAIT_BRAND
+    await handle_brand_reply(update, context, session, text)
 
 
 def match_content_type(text):
@@ -1281,16 +1281,7 @@ def match_content_type(text):
 def fallback_parse(text):
     """Fallback parser: extract brand/topik/angle dari teks tanpa Claude API.
     Lebih baik tebak dari konteks daripada gagal."""
-    guidelines = load_brand_guidelines()
-    all_brand_names = list(guidelines.keys())
-    # Tambahkan brand dari known prefixes
-    known_brands = [
-        "Playpod", "Sabitah", "County", "Legus", "Defarchy",
-        "Happy Baby", "Personal Brand Dimas",
-    ]
-    for b in known_brands:
-        if b not in all_brand_names:
-            all_brand_names.append(b)
+    all_brand_names = list(get_all_known_brands())
 
     text_lower = text.lower()
 
@@ -1414,11 +1405,7 @@ async def handle_link_message(update, context, session, links, full_text):
     session["_link_type"] = source_label
 
     # Tanya user mau pakai brand apa
-    _, _, brands = read_sheet_info()
-    guidelines = load_brand_guidelines()
-    all_brands = set(brands)
-    for g in guidelines.keys():
-        all_brands.add(g)
+    all_brands = get_all_known_brands()
     brand_list = ", ".join(sorted(all_brands)) if all_brands else "(belum ada brand)"
 
     await update.message.reply_text(
@@ -1435,11 +1422,7 @@ async def handle_link_message(update, context, session, links, full_text):
 
 async def handle_link_brand_reply(update, context, session, text):
     """Handle jawaban brand setelah analisa link."""
-    _, _, brands = read_sheet_info()
-    guidelines = load_brand_guidelines()
-    all_brands = set(brands)
-    for g in guidelines.keys():
-        all_brands.add(g)
+    all_brands = get_all_known_brands()
     brands_lower = {b.lower(): b for b in all_brands}
 
     # Match brand
