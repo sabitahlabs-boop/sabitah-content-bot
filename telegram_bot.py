@@ -54,6 +54,7 @@ TEAM_MEMBERS = {
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/drive.file",
 ]
 SHEET_NAME = "Master Tracker"
 
@@ -1066,41 +1067,52 @@ async def generate_with_qa(client, update, brand, topik, angle, content_type):
 # ============================================================
 # GOOGLE DOCS — Script Bank
 # ============================================================
-def write_script_to_docs(brand, content_id, topik, content_type, script):
-    """Tulis script ke Google Docs brand. Return doc URL atau None."""
-    doc_id = BRAND_DOCS.get(brand)
-    if not doc_id:
-        logger.info(f"[DOCS] No Google Doc configured for brand: {brand}")
-        return None
-
+def write_script_to_docs(brand, content_id, topik, content_type, script, hook=""):
+    """Buat Google Doc baru per script. Return doc URL atau None."""
     try:
         creds = get_google_credentials()
         docs_service = build("docs", "v1", credentials=creds)
 
-        # Get end of document
-        doc = docs_service.documents().get(documentId=doc_id).execute()
-        doc_content = doc.get("body", {}).get("content", [])
-        end_index = doc_content[-1]["endIndex"] - 1 if doc_content else 1
+        # Title = hook or topik
+        title = hook[:80] if hook else topik[:80]
+        doc_title = f"[{content_id}] {brand} - {title}"
 
-        # Build text to insert
-        separator = "-" * 50
-        text = (
-            f"\n\n{separator}\n"
-            f"{content_id} | {content_type} | {topik}\n"
-            f"{separator}\n\n"
-            f"{script}\n\n"
+        # Create new doc
+        doc = docs_service.documents().create(body={"title": doc_title}).execute()
+        doc_id = doc["documentId"]
+
+        # Write content
+        sep = "=" * 40
+        header_text = (
+            f"Content ID: {content_id}\n"
+            f"Brand: {brand}\n"
+            f"Tipe: {content_type}\n"
+            f"Topik: {topik}\n"
+            f"Hook: {hook}\n"
+            f"{sep}\n\n"
+            f"{script}\n"
         )
 
         docs_service.documents().batchUpdate(
             documentId=doc_id,
-            body={"requests": [{"insertText": {"location": {"index": end_index}, "text": text}}]},
+            body={"requests": [{"insertText": {"location": {"index": 1}, "text": header_text}}]},
         ).execute()
 
+        # Make shareable
+        try:
+            drive_service = build("drive", "v3", credentials=creds)
+            drive_service.permissions().create(
+                fileId=doc_id,
+                body={"type": "anyone", "role": "writer"},
+            ).execute()
+        except Exception:
+            pass  # Drive API might not be available on Railway
+
         doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
-        logger.info(f"[DOCS] Script written: {content_id} -> {doc_url}")
+        logger.info(f"[DOCS] Created doc: {content_id} -> {doc_url}")
         return doc_url
     except Exception as e:
-        logger.error(f"[DOCS] Failed to write script: {e}")
+        logger.error(f"[DOCS] Failed to create doc: {e}")
         return None
 
 
