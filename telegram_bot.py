@@ -2844,6 +2844,17 @@ async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
+async def chatid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/chatid — tampilkan chat ID untuk setup."""
+    chat = update.effective_chat
+    await update.message.reply_text(
+        f"Chat ID: `{chat.id}`\n"
+        f"Type: {chat.type}\n"
+        f"Title: {chat.title or 'Private'}",
+        parse_mode="Markdown",
+    )
+
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -2884,6 +2895,7 @@ def main():
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CommandHandler("report", report_command))
     app.add_handler(CommandHandler("team", team_command))
+    app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
