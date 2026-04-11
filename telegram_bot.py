@@ -1281,6 +1281,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if not text:
         return
+
+    # In groups, only respond if bot is mentioned or user has active session
+    chat_type = update.effective_chat.type
+    if chat_type in ("group", "supergroup"):
+        session = get_session(context)
+        bot_username = (await context.bot.get_me()).username or ""
+        is_mentioned = f"@{bot_username}" in text
+        has_active_session = session.get("state", STATE_IDLE) != STATE_IDLE
+
+        if not is_mentioned and not has_active_session:
+            return  # Ignore random group messages
+
+        # Remove bot mention from text
+        if is_mentioned:
+            text = text.replace(f"@{bot_username}", "").strip()
+
     await process_text(update, context, text)
 
 
@@ -1998,7 +2014,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle document upload — extract text, ask brand, then generate script."""
+    # Skip if message is from a group and not a direct reply to bot or private chat
+    chat_type = update.effective_chat.type
+    if chat_type in ("group", "supergroup"):
+        # In groups, only process documents that are explicitly sent to bot
+        # (via reply or caption mentioning bot)
+        caption = update.message.caption or ""
+        bot_username = (await context.bot.get_me()).username or ""
+        if f"@{bot_username}" not in caption:
+            return  # Ignore documents in group unless bot is mentioned
+
     doc = update.message.document
+    if not doc:
+        return
+
+    # Skip GIFs, stickers, animations
+    mime = doc.mime_type or ""
+    if any(t in mime for t in ("gif", "video", "image", "sticker", "webp", "mp4")):
+        return
+
     file_name = doc.file_name or "unknown"
     caption = update.message.caption or ""
 
@@ -2006,10 +2040,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     allowed_ext = (".txt", ".doc", ".docx", ".pdf", ".md", ".rtf", ".csv")
     ext = os.path.splitext(file_name)[1].lower()
     if ext not in allowed_ext:
-        await update.message.reply_text(
-            f"Format file '{ext}' belum didukung.\n"
-            f"Kirim file berupa: {', '.join(allowed_ext)}"
-        )
+        # Only reply in private chat, not in groups (avoid spam)
+        if chat_type == "private":
+            await update.message.reply_text(
+                f"Format file '{ext}' belum didukung.\n"
+                f"Kirim file berupa: {', '.join(allowed_ext)}"
+            )
         return
 
     await update.message.reply_text(f"📄 Dokumen diterima: {file_name}\nMenganalisis isi dokumen...")
