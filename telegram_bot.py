@@ -1547,6 +1547,295 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def caption_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/caption [Content ID] — Generate caption + 30 hashtag untuk posting IG."""
+    args = context.args
+    if not args:
+        await update.message.reply_text("Ketik: /caption [Content ID]\nContoh: /caption SB-008")
+        return
+
+    target_cid = args[0].upper()
+    headers, data_rows, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+
+    # Find content
+    found = None
+    for row in data_rows:
+        cid = row[col_map['content_id']].strip() if col_map.get('content_id') is not None and col_map['content_id'] < len(row) else ''
+        if cid == target_cid:
+            found = row
+            break
+
+    if not found:
+        await update.message.reply_text(f"Content ID '{target_cid}' tidak ditemukan di tracker.")
+        return
+
+    def col(field):
+        idx = col_map.get(field)
+        if idx is not None and idx < len(found):
+            return found[idx].strip()
+        return ""
+
+    brand = col("brand")
+    topik = col("topik")
+    hook = col("hook")
+    script = col("script_notes")
+    ct = col("content_type")
+
+    if not script:
+        await update.message.reply_text(f"{target_cid} belum punya script.")
+        return
+
+    await update.message.reply_text(f"Generating caption + hashtag untuk {target_cid}...")
+
+    guidelines = get_guidelines_for_brand(brand)
+    guidelines_text = format_guidelines_text(brand, guidelines) if guidelines else ""
+
+    claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    msg = claude_client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1500,
+        messages=[{"role": "user", "content": f"""Buatkan CAPTION INSTAGRAM dan HASHTAG untuk konten berikut:
+
+Brand: {brand}
+Tipe: {ct}
+Topik: {topik}
+Hook: {hook}
+
+SCRIPT:
+{script[:3000]}
+
+BRAND GUIDELINES:
+{guidelines_text}
+
+FORMAT OUTPUT:
+1. Caption yang engaging (150-300 kata), sesuai tone brand
+   - Buka dengan hook yang menarik
+   - Isi dengan value/insight
+   - Tutup dengan CTA sesuai brand guidelines
+   - Gunakan line breaks untuk readability
+
+2. 30 hashtag relevan, mix antara:
+   - 10 hashtag populer (high volume)
+   - 10 hashtag niche (medium volume)
+   - 10 hashtag spesifik brand/topik (low volume)
+
+Tulis caption dulu, lalu hashtag di bagian terpisah."""}],
+    )
+    result = msg.content[0].text.strip()
+
+    # Update caption di sheet
+    caption_col = col_map.get("caption_status")
+    if caption_col is not None:
+        for row_idx, row in enumerate(data_rows):
+            cid_val = row[col_map['content_id']].strip() if col_map['content_id'] < len(row) else ''
+            if cid_val == target_cid:
+                service = get_sheets_service()
+                cell = f"'{SHEET_NAME}'!{col_to_letter(caption_col)}{row_idx + 3}"
+                service.spreadsheets().values().update(
+                    spreadsheetId=SPREADSHEET_ID, range=cell,
+                    valueInputOption="RAW", body={"values": [["Done"]]},
+                ).execute()
+                break
+
+    if len(result) <= 4096:
+        await update.message.reply_text(result)
+    else:
+        for i in range(0, len(result), 4096):
+            await update.message.reply_text(result[i:i+4096])
+
+    logger.info(f"[CAPTION] Generated for {target_cid}")
+
+
+async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/calendar [brand] — Generate content calendar 1 bulan ke depan."""
+    args = context.args
+    if not args:
+        guidelines = load_brand_guidelines()
+        brand_list = "\n".join(f"  - {b}" for b in guidelines.keys())
+        await update.message.reply_text(f"Ketik: /calendar [brand]\nContoh: /calendar Sabitah\n\nBrand:\n{brand_list}")
+        return
+
+    brand = " ".join(args).strip()
+    known = get_all_known_brands()
+    known_lower = {b.lower(): b for b in known}
+    brand_match = known_lower.get(brand.lower())
+
+    if not brand_match:
+        await update.message.reply_text(f"Brand '{brand}' tidak dikenali.")
+        return
+
+    await update.message.reply_text(f"Generating content calendar 1 bulan untuk {brand_match}...")
+
+    guidelines = get_guidelines_for_brand(brand_match)
+    guidelines_text = format_guidelines_text(brand_match, guidelines) if guidelines else ""
+
+    from datetime import timedelta
+    today = datetime.now()
+    start = today + timedelta(days=1)
+    end = today + timedelta(days=30)
+
+    claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    msg = claude_client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": f"""Buatkan CONTENT CALENDAR Instagram untuk 1 bulan ke depan:
+
+Brand: {brand_match}
+Periode: {start.strftime('%d %B')} - {end.strftime('%d %B %Y')}
+
+BRAND GUIDELINES:
+{guidelines_text}
+
+ATURAN:
+- 3-4 posting per minggu
+- Mix content type: 2 Reels + 1-2 Carousel per minggu
+- Topik harus bervariasi dan relevan dengan brand
+- Sertakan momen/hari penting di bulan ini jika relevan
+- Setiap entry: tanggal, tipe konten, topik, hook singkat
+
+FORMAT OUTPUT (tabel):
+Tanggal | Tipe | Topik | Hook
+{start.strftime('%d %b')} | Reels | [topik] | [hook singkat]
+...
+
+Buat minimal 12-15 konten untuk 1 bulan."""}],
+    )
+    calendar_text = msg.content[0].text.strip()
+
+    if len(calendar_text) <= 4096:
+        await update.message.reply_text(calendar_text)
+    else:
+        for i in range(0, len(calendar_text), 4096):
+            await update.message.reply_text(calendar_text[i:i+4096])
+
+    # Ask if user wants to add to tracker
+    keyboard = [
+        [InlineKeyboardButton("Tambahkan ke Tracker", callback_data=f"cal_add:{brand_match}")],
+        [InlineKeyboardButton("Cukup Lihat Saja", callback_data="cal_skip")],
+    ]
+    session = get_session(context)
+    session["_calendar_text"] = calendar_text
+    session["_calendar_brand"] = brand_match
+    await update.message.reply_text(
+        "Mau tambahkan konten ini ke tracker?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def repurpose_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/repurpose [Content ID] [format baru] — Convert script ke format lain."""
+    args = context.args
+    if not args or len(args) < 2:
+        await update.message.reply_text(
+            "Ketik: /repurpose [Content ID] [format baru]\n\n"
+            "Contoh:\n"
+            "  /repurpose SB-008 reels\n"
+            "  /repurpose OH-003 carousel\n"
+            "  /repurpose LG-011 thread\n"
+            "  /repurpose CT-008 caption\n\n"
+            "Format: reels, carousel, thread, caption"
+        )
+        return
+
+    target_cid = args[0].upper()
+    new_format = args[1].lower()
+
+    headers, data_rows, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+
+    found = None
+    for row in data_rows:
+        cid = row[col_map['content_id']].strip() if col_map.get('content_id') is not None and col_map['content_id'] < len(row) else ''
+        if cid == target_cid:
+            found = row
+            break
+
+    if not found:
+        await update.message.reply_text(f"Content ID '{target_cid}' tidak ditemukan.")
+        return
+
+    def col(field):
+        idx = col_map.get(field)
+        if idx is not None and idx < len(found):
+            return found[idx].strip()
+        return ""
+
+    brand = col("brand")
+    topik = col("topik")
+    script = col("script_notes")
+    original_type = col("content_type")
+
+    if not script:
+        await update.message.reply_text(f"{target_cid} belum punya script.")
+        return
+
+    format_map = {
+        "reels": "Reels Instagram (spoken word narasi monolog 30-60 detik)",
+        "carousel": "Carousel Instagram 7 slide (cover, konten, CTA)",
+        "thread": "Twitter/X Thread (8-10 tweet, tiap tweet maks 280 karakter)",
+        "caption": "Caption Instagram panjang (300-500 kata, storytelling)",
+    }
+
+    if new_format not in format_map:
+        await update.message.reply_text(f"Format '{new_format}' tidak dikenali.\nPilih: reels, carousel, thread, caption")
+        return
+
+    await update.message.reply_text(f"Repurposing {target_cid} ({original_type}) → {new_format}...")
+
+    guidelines = get_guidelines_for_brand(brand)
+    guidelines_text = format_guidelines_text(brand, guidelines) if guidelines else ""
+
+    claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    msg = claude_client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": f"""Repurpose/convert script konten berikut ke format baru.
+
+SCRIPT ORIGINAL ({original_type}):
+{script[:4000]}
+
+Brand: {brand}
+Topik: {topik}
+
+BRAND GUIDELINES:
+{guidelines_text}
+
+CONVERT KE: {format_map[new_format]}
+
+Pertahankan pesan utama dan insight dari script original.
+Sesuaikan format, panjang, dan gaya penulisan untuk platform baru.
+Tone dan bahasa tetap sesuai brand guidelines."""}],
+    )
+    result = msg.content[0].text.strip()
+
+    # Save as new content
+    new_type = "Reel" if new_format == "reels" else "Carousel" if new_format == "carousel" else "Single Post"
+    content_id = get_next_content_id(data_rows, brand)
+
+    append_to_sheet(
+        headers, col_map, brand, content_id, "",
+        new_type, f"[Repurpose {target_cid}] {topik}", "", result, "repurpose",
+    )
+
+    header = (
+        f"Repurpose berhasil!\n"
+        f"Original: {target_cid} ({original_type})\n"
+        f"New: {content_id} ({new_format})\n"
+        f"Brand: {brand}\n\n"
+    )
+
+    full = header + result
+    if len(full) <= 4096:
+        await update.message.reply_text(full)
+    else:
+        await update.message.reply_text(header + "(Script dikirim di pesan berikut)")
+        for i in range(0, len(result), 4096):
+            await update.message.reply_text(result[i:i+4096])
+
+    logger.info(f"[REPURPOSE] {target_cid} ({original_type}) -> {content_id} ({new_format})")
+
+
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_session(context)
     await update.message.reply_text("Proses dibatalkan. Kirim pesan baru untuk mulai lagi.")
@@ -2269,6 +2558,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+
+    elif data == "cal_add":
+        brand = session.get("_calendar_brand", "")
+        cal_text = session.get("_calendar_text", "")
+        await query.edit_message_text("Menambahkan ke tracker... (fitur ini segera hadir)")
+        # TODO: parse calendar text and add rows to sheet
+        session.pop("_calendar_text", None)
+        session.pop("_calendar_brand", None)
+
+    elif data.startswith("cal_add:"):
+        brand = data.split(":", 1)[1]
+        await query.edit_message_text("Menambahkan ke tracker... (fitur ini segera hadir)")
+        session.pop("_calendar_text", None)
+        session.pop("_calendar_brand", None)
+
+    elif data == "cal_skip":
+        await query.edit_message_text("Oke, calendar tidak ditambahkan ke tracker.")
+        session.pop("_calendar_text", None)
+        session.pop("_calendar_brand", None)
 
     elif data.startswith("doctype:"):
         content_type = data.split(":", 1)[1]
@@ -3309,6 +3617,9 @@ def main():
     app.add_handler(CommandHandler("report", report_command))
     app.add_handler(CommandHandler("team", team_command))
     app.add_handler(CommandHandler("register", register_command))
+    app.add_handler(CommandHandler("caption", caption_command))
+    app.add_handler(CommandHandler("calendar", calendar_command))
+    app.add_handler(CommandHandler("repurpose", repurpose_command))
     app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
