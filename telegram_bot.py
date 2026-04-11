@@ -1383,7 +1383,90 @@ def sync_summary_and_brief():
             valueInputOption="RAW", body={"values": brief},
         ).execute()
 
-        logger.info(f"[SYNC] Summary & Brief updated: {total} rows, {len(brand_stats)} brands")
+        # -- Calendar View --
+        days_of_week = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+        from datetime import timedelta
+        content_by_date = {}
+        for row in data_rows:
+            def col3(field):
+                idx = col_map.get(field)
+                if idx is not None and idx < len(row):
+                    return row[idx].strip()
+                return ""
+            date_str = col3("date")
+            if not date_str:
+                continue
+            parsed = None
+            for fmt in ["%b %d", "%d %b", "%Y-%m-%d", "%d/%m/%Y", "%B %d"]:
+                try:
+                    parsed = datetime.strptime(date_str.strip(), fmt)
+                    if parsed.year == 1900:
+                        parsed = parsed.replace(year=2026)
+                    break
+                except ValueError:
+                    continue
+            if not parsed:
+                continue
+            key = parsed.strftime("%Y-%m-%d")
+            if key not in content_by_date:
+                content_by_date[key] = []
+            cid = col3("content_id")
+            brand_name = col3("brand")
+            ct = col3("content_type")
+            topik_str = col3("topik")[:30]
+            ss = col3("script_status").lower()
+            vs = col3("visual_status").lower()
+            ps = col3("posting_status").lower()
+            if ps in ("done", "posted"):
+                status = "POSTED"
+            elif "done" in vs or "designed" in vs:
+                status = "VISUAL DONE"
+            elif "done" in ss:
+                status = "SCRIPT DONE"
+            else:
+                status = "PENDING"
+            content_by_date[key].append(f"{cid} {brand_name} | {ct} | {topik_str} [{status}]")
+
+        cal_data = [
+            ["CONTENT CALENDAR"],
+            [f"Last updated: {today.strftime('%d %B %Y %H:%M')} WIB"],
+            [],
+        ]
+        # Current and next month
+        for m_off in range(0, 2):
+            m = today.month + m_off
+            y = today.year + (m - 1) // 12
+            m = ((m - 1) % 12) + 1
+            month_start = datetime(y, m, 1)
+            cal_data.append([f"=== {month_start.strftime('%B %Y')} ==="])
+            cal_data.append(["Tanggal", "Hari", "Konten", "Status"])
+            day = month_start
+            while day.month == month_start.month:
+                key = day.strftime("%Y-%m-%d")
+                day_name = days_of_week[day.weekday()]
+                contents = content_by_date.get(key, [])
+                if contents:
+                    for i, c in enumerate(contents):
+                        parts = c.split(" [")
+                        ct_text = parts[0]
+                        st = parts[1].rstrip("]") if len(parts) > 1 else ""
+                        if i == 0:
+                            cal_data.append([day.strftime("%d %b"), day_name, ct_text, st])
+                        else:
+                            cal_data.append(["", "", ct_text, st])
+                day += timedelta(days=1)
+            cal_data.append([])
+
+        try:
+            service.spreadsheets().values().clear(spreadsheetId=SPREADSHEET_ID, range="'Calendar View'").execute()
+            service.spreadsheets().values().update(
+                spreadsheetId=SPREADSHEET_ID, range="'Calendar View'!A1",
+                valueInputOption="RAW", body={"values": cal_data},
+            ).execute()
+        except Exception:
+            pass  # Sheet might not exist yet
+
+        logger.info(f"[SYNC] Summary, Brief & Calendar updated: {total} rows, {len(brand_stats)} brands")
     except Exception as e:
         logger.error(f"[SYNC] Failed to sync: {e}")
 
