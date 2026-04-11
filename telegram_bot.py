@@ -24,8 +24,8 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import anthropic
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.request import HTTPXRequest
 
 # ============================================================
@@ -1326,35 +1326,52 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             return
 
         if state == STATE_WAIT_DOC_BRAND:
+            # Fallback kalau user ketik manual instead of button
             known = get_all_known_brands()
             known_lower = {b.lower(): b for b in known}
             brand_match = known_lower.get(text.lower())
             if not brand_match:
                 guidelines = load_brand_guidelines()
-                brand_list = "\n".join(f"  • {b}" for b in guidelines.keys())
+                keyboard = []
+                row = []
+                for i, brand_name in enumerate(guidelines.keys()):
+                    row.append(InlineKeyboardButton(brand_name, callback_data=f"docbrand:{brand_name}"))
+                    if len(row) == 2:
+                        keyboard.append(row)
+                        row = []
+                if row:
+                    keyboard.append(row)
                 await update.message.reply_text(
-                    f"Brand \"{text}\" tidak dikenali.\nPilih salah satu:\n\n{brand_list}"
+                    f"Brand \"{text}\" tidak dikenali. Pilih salah satu:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
                 )
                 return
             session["brand"] = brand_match
             session["state"] = STATE_WAIT_DOC_CONTENT_TYPE
+            keyboard = [
+                [InlineKeyboardButton("Carousel (7 slide)", callback_data="doctype:Carousel")],
+                [InlineKeyboardButton("Reels (30-60 detik)", callback_data="doctype:Reel")],
+                [InlineKeyboardButton("Single Post", callback_data="doctype:Single Post")],
+            ]
             await update.message.reply_text(
-                f"Brand: *{brand_match}*\n\n"
-                "Mau dijadikan konten tipe apa?\n"
-                "  • Carousel (7 slide)\n"
-                "  • Reels (30-60 detik)\n"
-                "  • Single Post\n\n"
-                "Ketik tipe kontennya:",
+                f"Brand: *{brand_match}*\n\nMau dijadikan konten tipe apa?",
                 parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
 
         if state == STATE_WAIT_DOC_CONTENT_TYPE:
+            # Fallback kalau user ketik manual
             ct = match_content_type(text)
             if not ct:
+                keyboard = [
+                    [InlineKeyboardButton("Carousel (7 slide)", callback_data="doctype:Carousel")],
+                    [InlineKeyboardButton("Reels (30-60 detik)", callback_data="doctype:Reel")],
+                    [InlineKeyboardButton("Single Post", callback_data="doctype:Single Post")],
+                ]
                 await update.message.reply_text(
-                    f"Tipe \"{text}\" tidak dikenali.\n"
-                    "Pilih: Carousel / Reels / Single Post"
+                    f"Tipe \"{text}\" tidak dikenali. Pilih salah satu:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
                 )
                 return
             session["_doc_content_type"] = ct
@@ -1925,6 +1942,46 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================================
+# CALLBACK QUERY HANDLER (Inline Buttons)
+# ============================================================
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline keyboard button presses."""
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    session = get_session(context)
+
+    if data.startswith("docbrand:"):
+        brand_name = data.split(":", 1)[1]
+        session["brand"] = brand_name
+        session["state"] = STATE_WAIT_DOC_CONTENT_TYPE
+
+        keyboard = [
+            [InlineKeyboardButton("Carousel (7 slide)", callback_data="doctype:Carousel")],
+            [InlineKeyboardButton("Reels (30-60 detik)", callback_data="doctype:Reel")],
+            [InlineKeyboardButton("Single Post", callback_data="doctype:Single Post")],
+        ]
+        await query.edit_message_text(
+            f"Brand: *{brand_name}*\n\nMau dijadikan konten tipe apa?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+    elif data.startswith("doctype:"):
+        content_type = data.split(":", 1)[1]
+        session["_doc_content_type"] = content_type
+        await query.edit_message_text(
+            f"Tipe konten: *{content_type}*\nMemproses...",
+            parse_mode="Markdown",
+        )
+        # Create a fake Update with message for _process_doc_with_brand
+        await _process_doc_with_brand(query, context, session)
+
+    else:
+        logger.warning(f"Unknown callback data: {data}")
+
+
+# ============================================================
 # DOCUMENT UPLOAD → AUTO SCRIPT
 # ============================================================
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2050,23 +2107,33 @@ Respond dalam JSON (tanpa markdown code block):
                     break
 
         if session.get("brand"):
-            # Brand sudah diketahui, langsung tanya content type
+            # Brand sudah diketahui, langsung tanya content type via buttons
             session["state"] = STATE_WAIT_DOC_CONTENT_TYPE
+            keyboard = [
+                [InlineKeyboardButton("Carousel (7 slide)", callback_data="doctype:Carousel")],
+                [InlineKeyboardButton("Reels (30-60 detik)", callback_data="doctype:Reel")],
+                [InlineKeyboardButton("Single Post", callback_data="doctype:Single Post")],
+            ]
             await update.message.reply_text(
-                f"Brand: *{session['brand']}*\n\n"
-                "Mau dijadikan konten tipe apa?\n"
-                "  • Carousel (7 slide)\n"
-                "  • Reels (30-60 detik)\n"
-                "  • Single Post\n\n"
-                "Ketik tipe kontennya:",
+                f"Brand: *{session['brand']}*\n\nMau dijadikan konten tipe apa?",
                 parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
             )
         else:
+            # Tampilkan brand sebagai buttons
             guidelines = load_brand_guidelines()
-            brand_list = "\n".join(f"  • {b}" for b in guidelines.keys())
+            keyboard = []
+            row = []
+            for i, brand_name in enumerate(guidelines.keys()):
+                row.append(InlineKeyboardButton(brand_name, callback_data=f"docbrand:{brand_name}"))
+                if len(row) == 2:
+                    keyboard.append(row)
+                    row = []
+            if row:
+                keyboard.append(row)
             await update.message.reply_text(
-                f"Mau dijadikan konten untuk brand mana?\n\n{brand_list}\n\n"
-                "Ketik nama brand-nya:",
+                "Mau dijadikan konten untuk brand mana?",
+                reply_markup=InlineKeyboardMarkup(keyboard),
             )
 
     except Exception as e:
@@ -2074,8 +2141,18 @@ Respond dalam JSON (tanpa markdown code block):
         await update.message.reply_text(f"Gagal proses dokumen:\n{str(e)}")
 
 
-async def _process_doc_with_brand(update, context, session):
-    """Process uploaded doc into branded script."""
+async def _process_doc_with_brand(source, context, session):
+    """Process uploaded doc into branded script.
+    source can be Update (from text), CallbackQuery (from button), or message object."""
+    # Get reply function regardless of source type
+    if hasattr(source, 'message') and source.message:
+        reply = source.message.reply_text
+    elif hasattr(source, 'get_bot'):
+        # It's a CallbackQuery
+        reply = source.message.reply_text
+    else:
+        reply = source.reply_text
+
     brand = session["brand"]
     doc_text = session.get("_doc_text", "")
     doc_topik = session.get("_doc_topik", "Konten dari dokumen")
@@ -2085,7 +2162,7 @@ async def _process_doc_with_brand(update, context, session):
     guidelines = get_guidelines_for_brand(brand)
     guidelines_text = format_guidelines_text(brand, guidelines) if guidelines else ""
 
-    await update.message.reply_text(
+    await reply(
         f"🔄 Mengadaptasi dokumen menjadi script {content_type} untuk *{brand}*...",
         parse_mode="Markdown",
     )
@@ -2178,14 +2255,14 @@ PENTING:
 
         full_reply = header + script
         if len(full_reply) <= 4096:
-            await update.message.reply_text(full_reply)
+            await reply(full_reply)
         else:
-            await update.message.reply_text(header + "(Script dikirim di pesan berikut)")
+            await reply(header + "(Script dikirim di pesan berikut)")
             for i in range(0, len(script), 4096):
-                await update.message.reply_text(script[i : i + 4096])
+                await reply(script[i : i + 4096])
 
         if content_type == "Carousel":
-            await update.message.reply_text(
+            await reply(
                 f"✅ Script carousel {brand} dari dokumen sudah tersimpan di tracker.\n\n"
                 f"Untuk generate visual, buka Claude.ai Project dan ketik:\n"
                 f"*generate carousel dari tracker*",
@@ -2196,7 +2273,7 @@ PENTING:
 
     except Exception as e:
         logger.error(f"[DOC] Error generating script: {e}", exc_info=True)
-        await update.message.reply_text(f"❌ Gagal generate script dari dokumen:\n{str(e)}")
+        await reply(f"❌ Gagal generate script dari dokumen:\n{str(e)}")
 
     # Cleanup session
     for key in list(session.keys()):
@@ -2400,6 +2477,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CommandHandler("report", report_command))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
