@@ -2804,28 +2804,24 @@ async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Test kirim pesan ke group
             try:
-                await context.bot.send_message(
-                    chat_id=int(group_id),
-                    text=(
-                        f"✅ *Sabitah Team Channel Terdaftar!*\n\n"
-                        f"*Tim Sabitah:*\n{team_list}\n\n"
-                        f"Notifikasi aktif:\n"
-                        f"  • Konten baru di-generate\n"
-                        f"  • Batch konten selesai\n"
-                        f"  • Deadline reminder (08:30 WIB)\n"
-                        f"  • Daily report (08:00 WIB)"
-                    ),
-                    parse_mode="Markdown",
+                test_msg = (
+                    "Sabitah Team Channel Terdaftar!\n\n"
+                    "Tim Sabitah:\n" + team_list + "\n\n"
+                    "Notifikasi aktif:\n"
+                    "- Konten baru di-generate\n"
+                    "- Batch konten selesai\n"
+                    "- Deadline reminder (08:30 WIB)\n"
+                    "- Daily report (08:00 WIB)"
                 )
+                await context.bot.send_message(chat_id=int(group_id), text=test_msg)
                 await update.message.reply_text(
-                    f"✅ Group `{group_id}` berhasil didaftarkan!\n"
+                    f"Group {group_id} berhasil didaftarkan!\n"
                     f"Pesan test sudah dikirim ke group.\n\n"
-                    f"_Set TEAM\\_GROUP\\_ID={group_id} di Railway env._",
-                    parse_mode="Markdown",
+                    f"Set TEAM_GROUP_ID={group_id} di Railway env."
                 )
                 logger.info(f"[TEAM] Group registered via private: {group_id}")
             except Exception as e:
-                await update.message.reply_text(f"❌ Gagal kirim ke group {group_id}:\n{e}")
+                await update.message.reply_text(f"Gagal kirim ke group {group_id}:\n{e}")
         else:
             # Instruksi cara dapat group ID
             await update.message.reply_text(
