@@ -58,17 +58,6 @@ SCOPES = [
 ]
 SHEET_NAME = "Master Tracker"
 
-# Google Docs per brand (Script Bank)
-BRAND_DOCS = {
-    "Oma Hera": "1GKisWts7d9DXbdgB4CXpJrIIF-wewW-gA8mqW3rhJ0Q",
-    "Sabitah": "1Wp421ZitvWaTxPG1846y4Ir87ITucQmJcuj2lx3hsKo",
-    "County": "1EkW1fxIiltqYlIVS_2EijIkxmU3Tn-OmRgSEsJW2aLY",
-    "LEGUS": "1FaxE6o3-pd0tEfUcNUbi2h9UiWByI8HmllwoVadG7TU",
-    "Defarchy": "13AF8r_4argxfM2kXpr80mmO9pNsVa1Q4ihwPYmBY4Wc",
-    "Happy Baby": "1Jr4b3bjC_tF7mWRpotxMUQKqaOCxBij7vJbYVa0Lx3g",
-    "Personal Brand Dimas": "1zjxU6Odp4Z7KBLrx-cDAw5bWpeLKgeo7XvdApCW49cA",
-    "Ci Angel": "1qG8JPbGIEHNtALXMnd2iIOL-LUvmSJ4TSAL_YLIaUuI",
-}
 
 # Paths untuk file lokal (development)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
