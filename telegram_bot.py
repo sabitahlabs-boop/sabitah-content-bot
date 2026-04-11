@@ -42,6 +42,15 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SPREADSHEET_ID = os.environ.get("GOOGLE_SPREADSHEET_ID", "13_BnnBjVLRcpJAiyieBqF7tnuoRZ7ij7fs0u8Z9Hd1Y")
 REPORT_CHAT_ID = os.environ.get("REPORT_CHAT_ID", "")  # Telegram chat ID untuk daily report
+TEAM_GROUP_ID = os.environ.get("TEAM_GROUP_ID", "")  # Telegram group ID untuk notifikasi tim
+
+# Tim Sabitah
+TEAM_MEMBERS = {
+    "Dimas": "Owner",
+    "Firman": "Content Creator",
+    "Asdi": "Social Media Specialist",
+    "Dedi": "Main Editor",
+}
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_NAME = "Master Tracker"
 
@@ -1208,6 +1217,9 @@ async def finalize_and_generate(update, context, session):
 
         logger.info(f"Processed {content_id}: {brand} - {topik} | QA: {qa_status}")
 
+        # Notify team
+        await notify_new_content(context, content_id, brand, topik, content_type)
+
         # Update Visual Status & notify for Carousel
         if content_type == "Carousel":
             if content_id:
@@ -2319,6 +2331,9 @@ PENTING:
                 if len(summary) > 4096:
                     summary = summary[:4090] + "..."
                 await reply(summary, parse_mode="Markdown")
+
+                # Notify team about batch
+                await notify_batch_complete(context, brand, len(generated), content_type)
             else:
                 await reply("❌ Tidak ada konten yang berhasil di-generate.")
 
@@ -2387,6 +2402,7 @@ PENTING:
                     await reply(script[i : i + 4096])
 
             logger.info(f"[DOC] Generated {content_id}: {brand} - {doc_topik}")
+            await notify_new_content(context, content_id, brand, doc_topik, content_type)
 
     except Exception as e:
         logger.error(f"[DOC] Error generating script: {e}", exc_info=True)
@@ -2402,6 +2418,155 @@ PENTING:
 # ============================================================
 # DAILY REPORT
 # ============================================================
+async def notify_team(context_or_bot, message):
+    """Kirim notifikasi ke Telegram Group tim Sabitah."""
+    group_id = TEAM_GROUP_ID
+    if not group_id:
+        logger.warning("[NOTIFY] TEAM_GROUP_ID belum di-set, skip notif")
+        return
+
+    try:
+        bot = context_or_bot.bot if hasattr(context_or_bot, 'bot') else context_or_bot
+        await bot.send_message(
+            chat_id=int(group_id),
+            text=message,
+            parse_mode="Markdown",
+        )
+        logger.info("[NOTIFY] Team notification sent")
+    except Exception as e:
+        logger.error(f"[NOTIFY] Gagal kirim notif: {e}")
+        try:
+            bot = context_or_bot.bot if hasattr(context_or_bot, 'bot') else context_or_bot
+            await bot.send_message(chat_id=int(group_id), text=message)
+        except Exception:
+            pass
+
+
+async def notify_new_content(context_or_bot, content_id, brand, topik, content_type, owner="Dimas"):
+    """Notifikasi tim saat konten baru di-generate."""
+    # Assign PIC berdasarkan content type
+    if content_type in ("Carousel", "Single Post"):
+        next_pic = "Dedi (Editor)"
+        next_action = "Review & buat visual design"
+    elif content_type in ("Reel", "Reels"):
+        next_pic = "Firman (Content Creator)"
+        next_action = "Shooting & editing video"
+    else:
+        next_pic = "Tim"
+        next_action = "Review konten"
+
+    msg = (
+        f"🆕 *Konten Baru Masuk!*\n\n"
+        f"📌 *{content_id}* — {brand}\n"
+        f"📝 {topik}\n"
+        f"🎬 Tipe: {content_type}\n"
+        f"👤 Dibuat: {owner}\n\n"
+        f"➡️ *Next:* {next_pic}\n"
+        f"📋 Action: {next_action}\n\n"
+        f"_Cek tracker untuk detail script._"
+    )
+    await notify_team(context_or_bot, msg)
+
+
+async def notify_batch_complete(context_or_bot, brand, count, content_type):
+    """Notifikasi tim saat batch konten selesai (misal dari upload dokumen)."""
+    msg = (
+        f"📚 *Batch Konten Selesai!*\n\n"
+        f"Brand: *{brand}*\n"
+        f"Jumlah: *{count} konten* ({content_type})\n"
+        f"Status: Script Done\n\n"
+        f"👤 *Dedi* — review & assign visual\n"
+        f"👤 *Asdi* — siapkan jadwal posting\n\n"
+        f"_Cek tracker untuk detail._"
+    )
+    await notify_team(context_or_bot, msg)
+
+
+async def notify_deadline_reminder(context: ContextTypes.DEFAULT_TYPE):
+    """Job harian: kirim reminder deadline ke group tim."""
+    group_id = TEAM_GROUP_ID
+    if not group_id:
+        return
+
+    try:
+        headers, data_rows, _ = read_sheet_info()
+        col_map = get_header_index(headers)
+    except Exception:
+        return
+
+    today = datetime.now()
+    urgent = []
+    upcoming = []
+
+    for row in data_rows:
+        def col(field):
+            idx = col_map.get(field)
+            if idx is not None and idx < len(row):
+                return row[idx].strip()
+            return ""
+
+        script_status = col("script_status").lower()
+        visual_status = col("visual_status").lower()
+        posting_status = col("posting_status").lower()
+        date_str = col("date")
+        brand = col("brand")
+        topik = col("topik")[:40]
+        cid = col("content_id")
+
+        if posting_status in ("done", "posted"):
+            continue
+
+        if not date_str:
+            continue
+
+        parsed_date = None
+        for fmt in ["%b %d", "%d %b", "%Y-%m-%d", "%d/%m/%Y", "%B %d"]:
+            try:
+                parsed_date = datetime.strptime(date_str, fmt).replace(year=today.year)
+                break
+            except ValueError:
+                continue
+
+        if not parsed_date:
+            continue
+
+        delta = (parsed_date.date() - today.date()).days
+
+        if delta < 0:
+            urgent.append(f"  🔴 *OVERDUE* [{cid}] {brand} — {topik}")
+        elif delta == 0:
+            urgent.append(f"  🟠 *HARI INI* [{cid}] {brand} — {topik}")
+        elif delta == 1:
+            upcoming.append(f"  🟡 *BESOK* [{cid}] {brand} — {topik}")
+        elif delta <= 3:
+            upcoming.append(f"  ⚪ *{delta} hari* [{cid}] {brand} — {topik}")
+
+    if not urgent and not upcoming:
+        return  # Tidak ada yang mendesak
+
+    lines = [f"⏰ *Deadline Reminder — {today.strftime('%d %B %Y')}*\n"]
+
+    if urgent:
+        lines.append("🔥 *Mendesak:*")
+        lines.extend(urgent[:15])
+        lines.append("")
+
+    if upcoming:
+        lines.append("📅 *Segera:*")
+        lines.extend(upcoming[:10])
+        lines.append("")
+
+    lines.append("_Cek tracker & update status ya tim!_")
+
+    msg = "\n".join(lines)
+    try:
+        await context.bot.send_message(
+            chat_id=int(group_id), text=msg, parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"[NOTIFY] Deadline reminder failed: {e}")
+
+
 def build_daily_report():
     """Baca Google Sheet dan buat summary report."""
     try:
@@ -2519,34 +2684,42 @@ def build_daily_report():
 
 
 async def send_daily_report(context: ContextTypes.DEFAULT_TYPE):
-    """Kirim daily report ke chat ID yang sudah di-set."""
-    chat_id = REPORT_CHAT_ID or context.bot_data.get("report_chat_id", "")
-    if not chat_id:
-        logger.warning("[REPORT] Tidak ada REPORT_CHAT_ID, skip daily report")
-        return
-
-    logger.info(f"[REPORT] Sending daily report to {chat_id}")
+    """Kirim daily report ke chat ID dan team group."""
     report = build_daily_report()
 
-    try:
-        await context.bot.send_message(
-            chat_id=int(chat_id),
-            text=report,
-            parse_mode="Markdown",
-        )
-        logger.info("[REPORT] Daily report sent successfully")
-    except Exception as e:
-        logger.error(f"[REPORT] Gagal kirim report: {e}", exc_info=True)
-        # Coba kirim tanpa markdown kalau formatting error
+    # Kirim ke REPORT_CHAT_ID (owner)
+    chat_id = REPORT_CHAT_ID or context.bot_data.get("report_chat_id", "")
+    if chat_id:
         try:
-            await context.bot.send_message(chat_id=int(chat_id), text=report)
-        except Exception:
-            pass
+            await context.bot.send_message(
+                chat_id=int(chat_id), text=report, parse_mode="Markdown",
+            )
+            logger.info("[REPORT] Daily report sent to owner")
+        except Exception as e:
+            logger.error(f"[REPORT] Gagal kirim report ke owner: {e}")
+            try:
+                await context.bot.send_message(chat_id=int(chat_id), text=report)
+            except Exception:
+                pass
+
+    # Kirim juga ke team group
+    group_id = TEAM_GROUP_ID or context.bot_data.get("team_group_id", "")
+    if group_id and group_id != chat_id:
+        try:
+            await context.bot.send_message(
+                chat_id=int(group_id), text=report, parse_mode="Markdown",
+            )
+            logger.info("[REPORT] Daily report sent to team group")
+        except Exception as e:
+            logger.error(f"[REPORT] Gagal kirim report ke group: {e}")
+            try:
+                await context.bot.send_message(chat_id=int(group_id), text=report)
+            except Exception:
+                pass
 
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Manual trigger: /report — kirim daily report sekarang."""
-    # Simpan chat ID untuk daily report
     chat_id = str(update.effective_chat.id)
     context.bot_data["report_chat_id"] = chat_id
     logger.info(f"[REPORT] Manual report requested by chat_id={chat_id}")
@@ -2556,6 +2729,42 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(report, parse_mode="Markdown")
     except Exception:
         await update.message.reply_text(report)
+
+
+async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/team — register group ini sebagai team notification channel."""
+    chat_id = str(update.effective_chat.id)
+    chat_type = update.effective_chat.type
+
+    if chat_type in ("group", "supergroup"):
+        context.bot_data["team_group_id"] = chat_id
+        global TEAM_GROUP_ID
+        TEAM_GROUP_ID = chat_id
+
+        team_list = "\n".join(f"  • {name} — {role}" for name, role in TEAM_MEMBERS.items())
+        await update.message.reply_text(
+            f"✅ Group ini terdaftar sebagai *Sabitah Team Channel*\n"
+            f"Chat ID: `{chat_id}`\n\n"
+            f"*Tim Sabitah:*\n{team_list}\n\n"
+            f"Notifikasi yang akan dikirim ke sini:\n"
+            f"  • Konten baru di-generate\n"
+            f"  • Batch konten selesai\n"
+            f"  • Deadline reminder (08:30 WIB)\n"
+            f"  • Daily report (08:00 WIB)\n\n"
+            f"_Set TEAM\\_GROUP\\_ID={chat_id} di Railway env untuk permanent._",
+            parse_mode="Markdown",
+        )
+        logger.info(f"[TEAM] Group registered: {chat_id}")
+    else:
+        await update.message.reply_text(
+            "⚠️ Command /team harus dijalankan di *Telegram Group*, bukan chat pribadi.\n\n"
+            "Cara setup:\n"
+            "1. Buat Telegram Group (misal: 'Sabitah Team')\n"
+            "2. Invite bot @SabitahBot ke group\n"
+            "3. Ketik /team di group\n"
+            "4. Copy TEAM\\_GROUP\\_ID ke Railway env",
+            parse_mode="Markdown",
+        )
 
 
 # ============================================================
@@ -2575,15 +2784,18 @@ def main():
     print(f"  API Key  : ...{ANTHROPIC_API_KEY[-8:]}")
     print(f"  Sheet    : {SPREADSHEET_ID}")
     print(f"  Report to: {REPORT_CHAT_ID or '(auto from /report)'}")
+    print(f"  Team grp : {TEAM_GROUP_ID or '(set via /team in group)'}")
     print(f"  Brands   : {', '.join(guidelines.keys())}")
     print("=" * 60)
     print("  Fitur:")
-    print("    - Terima pesan format apapun + voice note + foto")
+    print("    - Terima pesan + voice + foto + dokumen (PDF/DOCX)")
     print("    - Brand guidelines per brand")
     print("    - QA Agent: auto-review + auto-revisi")
-    print("    - Multi-step conversation flow")
+    print("    - Document: auto-detect chapters, 1 bab = 1 konten")
     print("    - Auto-save ke Google Sheet")
+    print("    - Team notifications ke Telegram Group")
     print("    - Daily report jam 08:00 WIB")
+    print("    - Deadline reminder jam 08:30 WIB")
     print("=" * 60)
     print("\n  Bot sedang berjalan... (Ctrl+C untuk stop)\n")
 
@@ -2594,6 +2806,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CommandHandler("report", report_command))
+    app.add_handler(CommandHandler("team", team_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
@@ -2608,6 +2821,11 @@ def main():
     if app.job_queue:
         app.job_queue.run_daily(send_daily_report, time=report_time, name="daily_report")
         logger.info(f"[REPORT] Daily report scheduled at {report_time} WIB")
+
+        # Deadline reminder jam 08:30 WIB
+        reminder_time = dt_time(hour=8, minute=30, second=0, tzinfo=wib)
+        app.job_queue.run_daily(notify_deadline_reminder, time=reminder_time, name="deadline_reminder")
+        logger.info(f"[REPORT] Deadline reminder scheduled at {reminder_time} WIB")
     else:
         logger.warning("[REPORT] JobQueue not available, daily report disabled")
 
