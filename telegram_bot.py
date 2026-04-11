@@ -51,8 +51,24 @@ TEAM_MEMBERS = {
     "Asdi": "Social Media Specialist",
     "Dedi": "Main Editor",
 }
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/documents",
+]
 SHEET_NAME = "Master Tracker"
+
+# Google Docs per brand (Script Bank)
+BRAND_DOCS = {
+    "Oma Hera": "1GKisWts7d9DXbdgB4CXpJrIIF-wewW-gA8mqW3rhJ0Q",
+    # Tambah brand lain di sini:
+    # "Sabitah": "DOC_ID_SABITAH",
+    # "County": "DOC_ID_COUNTY",
+    # "LEGUS": "DOC_ID_LEGUS",
+    # "Defarchy": "DOC_ID_DEFARCHY",
+    # "Happy Baby": "DOC_ID_HAPPY_BABY",
+    # "Personal Brand Dimas": "DOC_ID_DIMAS",
+    # "Ci Angel": "DOC_ID_CI_ANGEL",
+}
 
 # Paths untuk file lokal (development)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -513,6 +529,28 @@ def append_to_sheet(headers, col_map, brand, content_id, date_str,
         insertDataOption="INSERT_ROWS",
         body={"values": [new_row]},
     ).execute()
+
+    # Auto-write to Google Docs Script Bank
+    script_text = field_values.get("script_notes", "")
+    if script_text and brand:
+        doc_url = write_script_to_docs(brand, content_id, topik, content_type, script_text)
+        # Update Script Link column in sheet if doc URL available
+        if doc_url and "script_link" in col_map:
+            try:
+                headers_fresh, data_rows_fresh, _ = read_sheet_info()
+                cid_col = col_map.get("content_id", 1)
+                for row_idx, row in enumerate(data_rows_fresh):
+                    if len(row) > cid_col and row[cid_col].strip() == content_id:
+                        cell = f"'{SHEET_NAME}'!{col_to_letter(col_map['script_link'])}{row_idx + 3}"
+                        service.spreadsheets().values().update(
+                            spreadsheetId=SPREADSHEET_ID,
+                            range=cell,
+                            valueInputOption="RAW",
+                            body={"values": [[doc_url]]},
+                        ).execute()
+                        break
+            except Exception as e:
+                logger.error(f"[DOCS] Failed to update script_link: {e}")
 
     return new_row
 
@@ -1026,6 +1064,47 @@ async def generate_with_qa(client, update, brand, topik, angle, content_type):
 
 
 # ============================================================
+# ============================================================
+# GOOGLE DOCS — Script Bank
+# ============================================================
+def write_script_to_docs(brand, content_id, topik, content_type, script):
+    """Tulis script ke Google Docs brand. Return doc URL atau None."""
+    doc_id = BRAND_DOCS.get(brand)
+    if not doc_id:
+        logger.info(f"[DOCS] No Google Doc configured for brand: {brand}")
+        return None
+
+    try:
+        creds = get_google_credentials()
+        docs_service = build("docs", "v1", credentials=creds)
+
+        # Get end of document
+        doc = docs_service.documents().get(documentId=doc_id).execute()
+        doc_content = doc.get("body", {}).get("content", [])
+        end_index = doc_content[-1]["endIndex"] - 1 if doc_content else 1
+
+        # Build text to insert
+        separator = "-" * 50
+        text = (
+            f"\n\n{separator}\n"
+            f"{content_id} | {content_type} | {topik}\n"
+            f"{separator}\n\n"
+            f"{script}\n\n"
+        )
+
+        docs_service.documents().batchUpdate(
+            documentId=doc_id,
+            body={"requests": [{"insertText": {"location": {"index": end_index}, "text": text}}]},
+        ).execute()
+
+        doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+        logger.info(f"[DOCS] Script written: {content_id} -> {doc_url}")
+        return doc_url
+    except Exception as e:
+        logger.error(f"[DOCS] Failed to write script: {e}")
+        return None
+
+
 # SHEET HELPERS (Visual Status)
 # ============================================================
 
