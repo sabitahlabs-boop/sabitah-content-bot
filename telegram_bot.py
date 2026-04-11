@@ -2026,14 +2026,28 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     doc_text += page.get_text()
                 pdf_doc.close()
             except ImportError:
-                doc_text = file_bytes.decode("utf-8", errors="replace")
+                logger.error("[DOC] PyMuPDF not installed, cannot read PDF")
+                await update.message.reply_text(
+                    "Library PDF belum terinstall di server.\n"
+                    "Coba kirim dalam format .txt atau .docx, atau copy-paste isinya langsung."
+                )
+                return
+            except Exception as e:
+                logger.error(f"[DOC] PDF read error: {e}")
+                await update.message.reply_text(f"Gagal membaca PDF: {e}")
+                return
         elif ext in (".doc", ".docx"):
             try:
                 import docx as python_docx
                 doc_file = python_docx.Document(io.BytesIO(file_bytes))
                 doc_text = "\n".join(p.text for p in doc_file.paragraphs)
             except ImportError:
-                doc_text = file_bytes.decode("utf-8", errors="replace")
+                logger.error("[DOC] python-docx not installed")
+                await update.message.reply_text(
+                    "Library DOCX belum terinstall di server.\n"
+                    "Coba kirim dalam format .txt atau .pdf."
+                )
+                return
         else:
             doc_text = file_bytes.decode("utf-8", errors="replace")
 

@@ -9,3 +9,5 @@ SpeechRecognition==3.11.0
 pydub==0.25.1
 youtube-transcript-api==0.6.3
 yt-dlp==2024.12.23
+PyMuPDF==1.25.3
+python-docx==1.1.2
