@@ -882,7 +882,40 @@ def generate_script(client, brand, topik, angle, content_type):
     guidelines = get_guidelines_for_brand(brand)
     guidelines_text = format_guidelines_text(brand, guidelines)
 
-    prompt = f"""Kamu adalah content strategist untuk brand "{brand}" di Indonesia.
+    if content_type in ("Reel", "Reels"):
+        # Format Reels: spoken word / monolog narasi
+        prompt = f"""Kamu adalah content strategist untuk brand "{brand}" di Indonesia.
+
+BRAND GUIDELINES:
+{guidelines_text}
+
+Buatkan SCRIPT REELS Instagram (durasi 30-60 detik):
+
+- Brand: {brand}
+- Topik: {topik}
+- Angle/Hook: {angle}
+
+FORMAT SCRIPT REELS (spoken word / narasi monolog):
+
+Baris pertama = HOOK + arahan visual dalam kurung. Contoh:
+HOOK (visual + suasana tenang) (visual: pemandangan alam, slow motion)
+
+Lalu lanjutkan dengan dialog/narasi speaker. Aturan:
+- Tulis nama speaker di awal, lalu dialog dalam tanda kutip. Contoh:
+  SPEAKER: "Dialog pertama yang menarik perhatian..."
+- Setiap paragraf dialog baru = baris baru dalam tanda kutip
+- Ayat / kutipan penting = tandai dengan awalan **bold**
+- Pesan kunci / wisdom = tandai dengan **bold**
+- Penutup / CTA = tandai dengan **bold**
+- Jangan pakai label "Scene 1", "Point 1", dll — tulis mengalir seperti orang bicara
+- Bahasa HARUS sesuai guidelines: {guidelines.get('bahasa', 'Indonesia') if guidelines else 'Indonesia'}
+- Tone HARUS sesuai guidelines: {guidelines.get('tone', 'profesional') if guidelines else 'profesional'}
+- CTA di akhir HARUS sesuai: {guidelines.get('cta', 'follow') if guidelines else 'follow'}
+- Durasi bicara 30-60 detik (sekitar 100-180 kata)
+- Jangan pakai emoji berlebihan"""
+    else:
+        # Format Carousel: 7 slide
+        prompt = f"""Kamu adalah content strategist untuk brand "{brand}" di Indonesia.
 
 BRAND GUIDELINES:
 {guidelines_text}
@@ -1057,7 +1090,7 @@ async def generate_with_qa(client, update, brand, topik, angle, content_type):
 # GOOGLE DOCS — Script Bank
 # ============================================================
 def write_script_to_docs(brand, content_id, topik, content_type, script, hook=""):
-    """Buat Google Doc baru per script. Return doc URL atau None."""
+    """Buat Google Doc baru per script dengan formatting. Return doc URL atau None."""
     try:
         creds = get_google_credentials()
         docs_service = build("docs", "v1", credentials=creds)
@@ -1070,9 +1103,9 @@ def write_script_to_docs(brand, content_id, topik, content_type, script, hook=""
         doc = docs_service.documents().create(body={"title": doc_title}).execute()
         doc_id = doc["documentId"]
 
-        # Write content
+        # Build full text
         sep = "=" * 40
-        header_text = (
+        full_text = (
             f"Content ID: {content_id}\n"
             f"Brand: {brand}\n"
             f"Tipe: {content_type}\n"
@@ -1082,10 +1115,58 @@ def write_script_to_docs(brand, content_id, topik, content_type, script, hook=""
             f"{script}\n"
         )
 
+        # Insert text first
         docs_service.documents().batchUpdate(
             documentId=doc_id,
-            body={"requests": [{"insertText": {"location": {"index": 1}, "text": header_text}}]},
+            body={"requests": [{"insertText": {"location": {"index": 1}, "text": full_text}}]},
         ).execute()
+
+        # Apply bold formatting to key lines
+        # Re-read doc to get accurate indices
+        try:
+            doc_fresh = docs_service.documents().get(documentId=doc_id).execute()
+            bold_requests = []
+
+            for element in doc_fresh.get("body", {}).get("content", []):
+                if "paragraph" not in element:
+                    continue
+                for elem in element["paragraph"].get("elements", []):
+                    if "textRun" not in elem:
+                        continue
+                    text = elem["textRun"]["content"].strip()
+                    start = elem.get("startIndex", 0)
+                    end = elem.get("endIndex", 0)
+
+                    # Bold rules: HOOK line, speaker name lines, lines with ** markers,
+                    # metadata header lines
+                    should_bold = (
+                        text.startswith("HOOK")
+                        or text.startswith("Content ID:")
+                        or text.startswith("Brand:")
+                        or text.startswith("Tipe:")
+                        or text.startswith("Topik:")
+                        or text.startswith("Hook:")
+                        or ": \"" in text[:30]  # Speaker: "dialog"
+                        or text.startswith("SLIDE")
+                        or text.startswith("===")
+                    )
+
+                    if should_bold and start < end:
+                        bold_requests.append({
+                            "updateTextStyle": {
+                                "range": {"startIndex": start, "endIndex": end},
+                                "textStyle": {"bold": True},
+                                "fields": "bold",
+                            }
+                        })
+
+            if bold_requests:
+                docs_service.documents().batchUpdate(
+                    documentId=doc_id,
+                    body={"requests": bold_requests},
+                ).execute()
+        except Exception as e:
+            logger.warning(f"[DOCS] Bold formatting skipped: {e}")
 
         # Make shareable
         try:
@@ -1095,7 +1176,7 @@ def write_script_to_docs(brand, content_id, topik, content_type, script, hook=""
                 body={"type": "anyone", "role": "writer"},
             ).execute()
         except Exception:
-            pass  # Drive API might not be available on Railway
+            pass
 
         doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
         logger.info(f"[DOCS] Created doc: {content_id} -> {doc_url}")
@@ -2316,26 +2397,18 @@ async def _process_doc_with_brand(source, context, session):
 
     # Build format instruction
     if content_type in ("Reel", "Reels"):
-        format_instruction = """Format output sebagai SCRIPT REELS (30-60 detik):
-OPENING (0-5 detik):
-Shot: [deskripsi visual]
-Narasi: [teks yang diucapkan]
+        format_instruction = """Format output sebagai SCRIPT REELS (spoken word / narasi monolog, 30-60 detik):
 
-POINT 1 (5-15 detik):
-Shot: [deskripsi visual]
-Narasi: [teks]
+Baris pertama = HOOK + arahan visual dalam kurung. Contoh:
+HOOK (visual + suasana tenang) (visual: pemandangan alam, slow motion)
 
-POINT 2 (15-30 detik):
-Shot: [deskripsi visual]
-Narasi: [teks]
-
-POINT 3 (30-45 detik):
-Shot: [deskripsi visual]
-Narasi: [teks]
-
-CTA (45-60 detik):
-Shot: [deskripsi visual]
-Narasi: [CTA sesuai brand]"""
+Lalu dialog/narasi speaker dalam tanda kutip, mengalir seperti orang bicara.
+- Nama speaker di awal: SPEAKER: "dialog..."
+- Ayat/kutipan penting = **bold**
+- Pesan kunci = **bold**
+- Penutup/CTA = **bold**
+- Jangan pakai label Scene/Point — tulis mengalir natural
+- Durasi 30-60 detik (100-180 kata)"""
     else:
         format_instruction = """Format output sebagai SCRIPT CAROUSEL 7 slide:
 SLIDE 1 (COVER):

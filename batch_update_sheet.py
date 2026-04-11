@@ -121,7 +121,7 @@ RULES:
 
 
 def generate_reels_script(brand, topik, hook):
-    """Generate reels script (talking points, shot-by-shot, 30-60 sec)."""
+    """Generate reels script (spoken word / monolog narasi, 30-60 sec)."""
     guidelines = get_guidelines_for_brand(brand)
     guidelines_text = format_guidelines_text(brand, guidelines) if guidelines else ""
 
@@ -139,33 +139,23 @@ Buatkan SCRIPT REELS Instagram (durasi 30-60 detik):
 - Topik: {topik}
 - Hook/Angle: {hook}
 
-FORMAT:
-OPENING (0-5 detik):
-Shot: [deskripsi visual]
-Narasi: [teks yang diucapkan/ditampilkan]
+FORMAT SCRIPT REELS (spoken word / narasi monolog):
 
-POINT 1 (5-15 detik):
-Shot: [deskripsi visual]
-Narasi: [teks]
+Baris pertama = HOOK + arahan visual dalam kurung. Contoh:
+HOOK (visual + suasana tenang) (visual: pemandangan alam, slow motion)
 
-POINT 2 (15-30 detik):
-Shot: [deskripsi visual]
-Narasi: [teks]
-
-POINT 3 (30-45 detik):
-Shot: [deskripsi visual]
-Narasi: [teks]
-
-CTA (45-60 detik):
-Shot: [deskripsi visual]
-Narasi: [CTA sesuai brand]
-
-RULES:
+Lalu dialog/narasi speaker dalam tanda kutip, mengalir seperti orang bicara.
+- Tulis nama speaker di awal: SPEAKER: "dialog..."
+- Setiap paragraf dialog baru = baris baru dalam tanda kutip
+- Ayat / kutipan penting = tandai dengan **bold**
+- Pesan kunci / wisdom = tandai dengan **bold**
+- Penutup / CTA = tandai dengan **bold**
+- Jangan pakai label "Scene 1", "Point 1", dll — tulis mengalir natural
 - Bahasa: {guidelines.get('bahasa', 'Indonesia') if guidelines else 'Indonesia'}
 - Tone: {guidelines.get('tone', 'professional') if guidelines else 'professional'}
 - CTA: {guidelines.get('cta', 'follow') if guidelines else 'follow'}
-- Tulis script lengkap, bukan placeholder
-- Harus engaging dari detik pertama"""}],
+- Durasi bicara 30-60 detik (100-180 kata)
+- Tulis script lengkap, bukan placeholder"""}],
     )
     return msg.content[0].text.strip()
 
