@@ -62,6 +62,7 @@ STATE_WAIT_CONTENT_TYPE = "wait_content_type"
 STATE_WAIT_CONFIRM_NEW_BRAND = "wait_confirm_new_brand"
 STATE_WAIT_LINK_BRAND = "wait_link_brand"
 STATE_WAIT_DOC_BRAND = "wait_doc_brand"
+STATE_WAIT_DOC_CONTENT_TYPE = "wait_doc_content_type"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -1325,7 +1326,6 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             return
 
         if state == STATE_WAIT_DOC_BRAND:
-            # User memilih brand untuk dokumen yang diupload
             known = get_all_known_brands()
             known_lower = {b.lower(): b for b in known}
             brand_match = known_lower.get(text.lower())
@@ -1337,6 +1337,27 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
                 )
                 return
             session["brand"] = brand_match
+            session["state"] = STATE_WAIT_DOC_CONTENT_TYPE
+            await update.message.reply_text(
+                f"Brand: *{brand_match}*\n\n"
+                "Mau dijadikan konten tipe apa?\n"
+                "  • Carousel (7 slide)\n"
+                "  • Reels (30-60 detik)\n"
+                "  • Single Post\n\n"
+                "Ketik tipe kontennya:",
+                parse_mode="Markdown",
+            )
+            return
+
+        if state == STATE_WAIT_DOC_CONTENT_TYPE:
+            ct = match_content_type(text)
+            if not ct:
+                await update.message.reply_text(
+                    f"Tipe \"{text}\" tidak dikenali.\n"
+                    "Pilih: Carousel / Reels / Single Post"
+                )
+                return
+            session["_doc_content_type"] = ct
             await _process_doc_with_brand(update, context, session)
             return
 
@@ -2029,7 +2050,17 @@ Respond dalam JSON (tanpa markdown code block):
                     break
 
         if session.get("brand"):
-            await _process_doc_with_brand(update, context, session)
+            # Brand sudah diketahui, langsung tanya content type
+            session["state"] = STATE_WAIT_DOC_CONTENT_TYPE
+            await update.message.reply_text(
+                f"Brand: *{session['brand']}*\n\n"
+                "Mau dijadikan konten tipe apa?\n"
+                "  • Carousel (7 slide)\n"
+                "  • Reels (30-60 detik)\n"
+                "  • Single Post\n\n"
+                "Ketik tipe kontennya:",
+                parse_mode="Markdown",
+            )
         else:
             guidelines = load_brand_guidelines()
             brand_list = "\n".join(f"  • {b}" for b in guidelines.keys())
@@ -2048,19 +2079,11 @@ async def _process_doc_with_brand(update, context, session):
     brand = session["brand"]
     doc_text = session.get("_doc_text", "")
     doc_topik = session.get("_doc_topik", "Konten dari dokumen")
-    doc_format = session.get("_doc_format", "Carousel")
     doc_analysis = session.get("_doc_analysis", {})
+    content_type = session.get("_doc_content_type", "Carousel")
 
     guidelines = get_guidelines_for_brand(brand)
     guidelines_text = format_guidelines_text(brand, guidelines) if guidelines else ""
-
-    content_type = "Carousel"
-    if "reel" in doc_format.lower():
-        content_type = "Reel"
-    elif "single" in doc_format.lower() or "post" in doc_format.lower():
-        content_type = "Single Post"
-    elif "story" in doc_format.lower():
-        content_type = "Story"
 
     await update.message.reply_text(
         f"🔄 Mengadaptasi dokumen menjadi script {content_type} untuk *{brand}*...",
