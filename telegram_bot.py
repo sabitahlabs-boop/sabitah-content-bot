@@ -61,6 +61,7 @@ STATE_WAIT_DATE = "wait_date"
 STATE_WAIT_CONTENT_TYPE = "wait_content_type"
 STATE_WAIT_CONFIRM_NEW_BRAND = "wait_confirm_new_brand"
 STATE_WAIT_LINK_BRAND = "wait_link_brand"
+STATE_WAIT_DOC_BRAND = "wait_doc_brand"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -1243,7 +1244,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Halo! Aku bot Carousel Script Generator.\n\n"
         "Kirim aku pesan dalam format APAPUN, contoh:\n\n"
-        "- \"Bikin konten Playpod tentang dating spot yang anti-awkward\"\n"
+        "- \"Bikin konten Sabitah tentang dating spot yang anti-awkward\"\n"
         "- \"Sabitah, topiknya branding buat pemula, carousel, post 15 April\"\n"
         "- Kirim foto sebagai inspirasi konten\n"
         "- Atau kirim voice note!\n\n"
@@ -1323,6 +1324,21 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
             await handle_link_brand_reply(update, context, session, text)
             return
 
+        if state == STATE_WAIT_DOC_BRAND:
+            # User memilih brand untuk dokumen yang diupload
+            known = get_all_known_brands()
+            known_lower = {b.lower(): b for b in known}
+            brand_match = known_lower.get(text.lower())
+            if not brand_match:
+                guidelines = load_brand_guidelines()
+                brand_list = "\n".join(f"  • {b}" for b in guidelines.keys())
+                await update.message.reply_text(
+                    f"Brand \"{text}\" tidak dikenali.\nPilih salah satu:\n\n{brand_list}"
+                )
+                return
+            session["brand"] = brand_match
+            await _process_doc_with_brand(update, context, session)
+            return
 
         # ── STATE: IDLE — pesan baru ──
         logger.info(f"[INCOMING] user={update.effective_user.id} text={text!r}")
@@ -1435,8 +1451,8 @@ def get_all_known_brands():
     guidelines = load_brand_guidelines()
     all_brands = set(guidelines.keys())
     # Tambahkan known brands yang mungkin belum ada di guidelines
-    for b in ["Sabitah", "County", "LEGUS", "Defarchy", "Playpod",
-              "Happy Baby", "Personal Brand Dimas"]:
+    for b in ["Sabitah", "County", "LEGUS", "Defarchy",
+              "Happy Baby", "Personal Brand Dimas", "Oma Hera", "Ci Angel"]:
         all_brands.add(b)
     try:
         _, _, sheet_brands = read_sheet_info()
@@ -1791,7 +1807,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning("Image analysis returned empty data")
             await update.message.reply_text(
                 "Aku terima gambarnya, tapi gagal extract info.\n"
-                "Coba ketik aja pesannya, misal: \"Bikin konten Playpod tentang ...\""
+                "Coba ketik aja pesannya, misal: \"Bikin konten Sabitah tentang ...\""
             )
             return
 
@@ -1885,6 +1901,285 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+
+
+# ============================================================
+# DOCUMENT UPLOAD → AUTO SCRIPT
+# ============================================================
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle document upload — extract text, ask brand, then generate script."""
+    doc = update.message.document
+    file_name = doc.file_name or "unknown"
+    caption = update.message.caption or ""
+
+    # Filter: only accept text-based docs
+    allowed_ext = (".txt", ".doc", ".docx", ".pdf", ".md", ".rtf", ".csv")
+    ext = os.path.splitext(file_name)[1].lower()
+    if ext not in allowed_ext:
+        await update.message.reply_text(
+            f"Format file '{ext}' belum didukung.\n"
+            f"Kirim file berupa: {', '.join(allowed_ext)}"
+        )
+        return
+
+    await update.message.reply_text(f"📄 Dokumen diterima: {file_name}\nMenganalisis isi dokumen...")
+
+    try:
+        tg_file = await context.bot.get_file(
+            doc.file_id, read_timeout=60, write_timeout=60, connect_timeout=60
+        )
+        file_url = tg_file.file_path
+        if not file_url.startswith("http"):
+            file_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_url}"
+
+        # Download file
+        async with httpx.AsyncClient(timeout=60.0) as http_client:
+            resp = await http_client.get(file_url)
+            resp.raise_for_status()
+            file_bytes = resp.content
+
+        # Extract text based on file type
+        doc_text = ""
+        if ext == ".pdf":
+            try:
+                import fitz  # PyMuPDF
+                pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
+                for page in pdf_doc:
+                    doc_text += page.get_text()
+                pdf_doc.close()
+            except ImportError:
+                doc_text = file_bytes.decode("utf-8", errors="replace")
+        elif ext in (".doc", ".docx"):
+            try:
+                import docx as python_docx
+                doc_file = python_docx.Document(io.BytesIO(file_bytes))
+                doc_text = "\n".join(p.text for p in doc_file.paragraphs)
+            except ImportError:
+                doc_text = file_bytes.decode("utf-8", errors="replace")
+        else:
+            doc_text = file_bytes.decode("utf-8", errors="replace")
+
+        doc_text = doc_text.strip()
+        if not doc_text:
+            await update.message.reply_text("Dokumen kosong atau tidak bisa dibaca.")
+            return
+
+        logger.info(f"[DOC] Extracted {len(doc_text)} chars from {file_name}")
+
+        # Truncate if too long
+        if len(doc_text) > 8000:
+            doc_text = doc_text[:8000] + "\n\n[... terpotong, terlalu panjang]"
+
+        # Use Claude to analyze the document
+        claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        analysis = claude_client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=500,
+            messages=[{"role": "user", "content": f"""Analisis dokumen/skrip berikut dan extract informasi:
+
+DOKUMEN:
+\"\"\"{doc_text}\"\"\"
+
+Extract:
+1. Topik utama dokumen ini
+2. Poin-poin kunci / insight utama (max 5 poin)
+3. Jika ini draft skrip konten, identifikasi format-nya (carousel, reel, artikel, dll)
+4. Ringkasan singkat (2-3 kalimat)
+
+Respond dalam JSON (tanpa markdown code block):
+{{"topik": "...", "poin_kunci": ["...", "..."], "format_konten": "...", "ringkasan": "..."}}"""}],
+        )
+        analysis_text = analysis.content[0].text.strip()
+        analysis_data = safe_json_loads(analysis_text)
+
+        if not analysis_data:
+            analysis_data = {"topik": "Dokumen yang diupload", "ringkasan": doc_text[:200]}
+
+        # Show analysis
+        ringkasan = analysis_data.get("ringkasan", "")
+        topik = analysis_data.get("topik", "")
+        poin = analysis_data.get("poin_kunci", [])
+        format_konten = analysis_data.get("format_konten", "Carousel")
+
+        preview = f"📋 *Hasil Analisis Dokumen:*\n\n"
+        preview += f"*Topik:* {topik}\n"
+        if ringkasan:
+            preview += f"*Ringkasan:* {ringkasan}\n"
+        if poin:
+            preview += "*Poin Kunci:*\n" + "\n".join(f"  • {p}" for p in poin[:5]) + "\n"
+        preview += f"*Format:* {format_konten}\n"
+
+        await update.message.reply_text(preview, parse_mode="Markdown")
+
+        # Save doc data to session, ask for brand
+        session = get_session(context)
+        session["_doc_text"] = doc_text
+        session["_doc_topik"] = topik
+        session["_doc_format"] = format_konten
+        session["_doc_analysis"] = analysis_data
+        session["state"] = STATE_WAIT_DOC_BRAND
+
+        # If caption contains brand name, auto-detect
+        if caption:
+            known = get_all_known_brands()
+            known_lower = {b.lower(): b for b in known}
+            for word in caption.split():
+                if word.lower() in known_lower:
+                    session["brand"] = known_lower[word.lower()]
+                    break
+
+        if session.get("brand"):
+            await _process_doc_with_brand(update, context, session)
+        else:
+            guidelines = load_brand_guidelines()
+            brand_list = "\n".join(f"  • {b}" for b in guidelines.keys())
+            await update.message.reply_text(
+                f"Mau dijadikan konten untuk brand mana?\n\n{brand_list}\n\n"
+                "Ketik nama brand-nya:",
+            )
+
+    except Exception as e:
+        logger.error(f"Error processing document: {e}", exc_info=True)
+        await update.message.reply_text(f"Gagal proses dokumen:\n{str(e)}")
+
+
+async def _process_doc_with_brand(update, context, session):
+    """Process uploaded doc into branded script."""
+    brand = session["brand"]
+    doc_text = session.get("_doc_text", "")
+    doc_topik = session.get("_doc_topik", "Konten dari dokumen")
+    doc_format = session.get("_doc_format", "Carousel")
+    doc_analysis = session.get("_doc_analysis", {})
+
+    guidelines = get_guidelines_for_brand(brand)
+    guidelines_text = format_guidelines_text(brand, guidelines) if guidelines else ""
+
+    content_type = "Carousel"
+    if "reel" in doc_format.lower():
+        content_type = "Reel"
+    elif "single" in doc_format.lower() or "post" in doc_format.lower():
+        content_type = "Single Post"
+    elif "story" in doc_format.lower():
+        content_type = "Story"
+
+    await update.message.reply_text(
+        f"🔄 Mengadaptasi dokumen menjadi script {content_type} untuk *{brand}*...",
+        parse_mode="Markdown",
+    )
+
+    try:
+        claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        # Build prompt based on content type
+        if content_type == "Reel":
+            format_instruction = """Format output sebagai SCRIPT REELS (30-60 detik):
+OPENING (0-5 detik):
+Shot: [deskripsi visual]
+Narasi: [teks]
+
+POINT 1 (5-15 detik):
+Shot: [deskripsi visual]
+Narasi: [teks]
+
+... (lanjutkan)
+
+CTA (akhir):
+Shot: [deskripsi visual]
+Narasi: [CTA sesuai brand]"""
+        else:
+            format_instruction = """Format output sebagai SCRIPT CAROUSEL 7 slide:
+SLIDE 1 (COVER):
+Judul: [hook menarik]
+Teks: [teks pendek]
+Visual: [arahan visual]
+
+SLIDE 2:
+Judul: [subjudul]
+Teks: [konten]
+Visual: [arahan visual]
+
+... sampai SLIDE 7 (CTA)"""
+
+        prompt = f"""Kamu adalah content strategist untuk brand "{brand}".
+
+BRAND GUIDELINES:
+{guidelines_text}
+
+DOKUMEN SUMBER:
+\"\"\"{doc_text}\"\"\"
+
+TUGAS:
+Adaptasi dokumen di atas menjadi script konten Instagram yang siap pakai.
+- Ambil insight dan poin kunci dari dokumen
+- Sesuaikan tone, bahasa, dan CTA dengan brand guidelines
+- Buat hook yang menarik di awal
+- Pastikan setiap slide/section padat dan engaging
+- Maks 50 kata per slide (untuk carousel)
+- CTA di akhir HARUS sesuai brand guidelines
+
+{format_instruction}
+
+PENTING:
+- Bahasa: {guidelines.get('bahasa', 'Indonesia') if guidelines else 'Indonesia'}
+- Tone: {guidelines.get('tone', 'profesional') if guidelines else 'profesional'}
+- CTA: {guidelines.get('cta', 'follow') if guidelines else 'follow'}
+- Tulis script LENGKAP, bukan placeholder"""
+
+        msg = claude_client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        script = msg.content[0].text.strip()
+
+        # Save to Sheet
+        headers, data_rows, _ = read_sheet_info()
+        col_map = get_header_index(headers)
+        content_id = get_next_content_id(data_rows, brand)
+
+        append_to_sheet(
+            headers, col_map, brand, content_id, "",
+            content_type, doc_topik, "", script, "doc-upload",
+        )
+
+        if content_type == "Carousel":
+            update_sheet_visual_status(content_id, "Ready for Visual")
+
+        # Reply
+        header = (
+            f"✅ Script dari dokumen berhasil di-generate!\n"
+            f"Content ID: {content_id}\n"
+            f"Brand: {brand} | Tipe: {content_type}\n"
+            f"Topik: {doc_topik}\n\n"
+        )
+
+        full_reply = header + script
+        if len(full_reply) <= 4096:
+            await update.message.reply_text(full_reply)
+        else:
+            await update.message.reply_text(header + "(Script dikirim di pesan berikut)")
+            for i in range(0, len(script), 4096):
+                await update.message.reply_text(script[i : i + 4096])
+
+        if content_type == "Carousel":
+            await update.message.reply_text(
+                f"✅ Script carousel {brand} dari dokumen sudah tersimpan di tracker.\n\n"
+                f"Untuk generate visual, buka Claude.ai Project dan ketik:\n"
+                f"*generate carousel dari tracker*",
+                parse_mode="Markdown",
+            )
+
+        logger.info(f"[DOC] Generated {content_id}: {brand} - {doc_topik}")
+
+    except Exception as e:
+        logger.error(f"[DOC] Error generating script: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Gagal generate script dari dokumen:\n{str(e)}")
+
+    # Cleanup session
+    for key in list(session.keys()):
+        if key.startswith("_doc_"):
+            session.pop(key, None)
+    reset_session(context)
 
 
 # ============================================================
@@ -2084,6 +2379,7 @@ def main():
     app.add_handler(CommandHandler("report", report_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     # Schedule daily report jam 08:00 WIB (01:00 UTC)
