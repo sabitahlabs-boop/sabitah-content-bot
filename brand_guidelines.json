@@ -40,35 +40,29 @@
     "target": "anak muda urban",
     "cta": "cek koleksi Defarchy",
     "bahasa": "Indonesia gaul",
+    "produk": "motor listrik dan sepeda listrik",
     "rules": [
       "Bahasa harus relatable untuk Gen Z dan millennial",
       "Boleh pakai slang dan bahasa internet",
       "Visual direction harus bold dan eye-catching",
-      "CTA arahkan ke koleksi atau produk Defarchy"
-    ]
-  },
-  "Playpod": {
-    "tone": "cozy, inviting",
-    "target": "pekerja remote, mahasiswa",
-    "cta": "booking Playpod sekarang",
-    "bahasa": "Indonesia santai",
-    "rules": [
-      "Gambarkan Playpod sebagai tempat yang nyaman dan produktif",
-      "Highlight fasilitas: WiFi kencang, AC, suasana tenang",
-      "Gunakan skenario relatable: WFH, ngerjain tugas, nongkrong",
-      "CTA arahkan ke booking atau visit Playpod"
+      "CTA arahkan ke koleksi atau produk Defarchy",
+      "Produk utama: motor listrik dan sepeda listrik",
+      "Highlight keunggulan EV: hemat, ramah lingkungan, cocok commuting kota"
     ]
   },
   "Happy Baby": {
-    "tone": "warm, caring",
-    "target": "new parents",
-    "cta": "cek produk Happy Baby",
+    "tone": "warm, caring, community-driven",
+    "target": "ibu muda / new parents",
+    "cta": "cek produk Happy Baby / join komunitas",
     "bahasa": "Indonesia lembut",
+    "produk": "kaos kaki bayi",
     "rules": [
       "Tone harus empathetic dan supportive ke orang tua baru",
       "Fokus pada keamanan, kenyamanan, dan kualitas produk",
       "Jangan judgmental tentang parenting style",
-      "CTA harus terasa sebagai rekomendasi teman, bukan jualan"
+      "CTA harus terasa sebagai rekomendasi teman, bukan jualan",
+      "Produk saat ini: kaos kaki bayi, tapi sosmed lebih fokus sebagai wadah komunitas ibu muda tentang parenting",
+      "Bangun engagement sebagai komunitas, bukan toko online"
     ]
   },
   "Personal Brand Dimas": {
@@ -80,7 +74,41 @@
       "Tulis seolah-olah Dimas sendiri yang bicara, first person",
       "Sharing pengalaman nyata, termasuk kegagalan",
       "Boleh vulnerable dan reflective",
-      "CTA: follow, engage, atau share pengalaman serupa"
+      "CTA: follow, engage, atau share pengalaman serupa",
+      "Dimas adalah owner Sabitah dan creator bot ini"
+    ]
+  },
+  "Oma Hera": {
+    "tone": "wise, menenangkan, hangat seperti nenek bicara ke cucu",
+    "target": "generasi muda yang ingin bertumbuh (cucu Oma)",
+    "cta": "reflektif — ajak 'cucu Oma' merenungkan pesan yang disampaikan",
+    "bahasa": "Indonesia, English hanya untuk idiom atau kata motivasi",
+    "background": "Hera Sumawi, Health Storyteller, lulusan Cosmetics (Belanda) & Pharmacy (UK), memulai ulang di usia 67 tahun",
+    "rules": [
+      "Tone harus seperti nenek bijak yang sayang cucu — lembut, tidak menggurui",
+      "Sebutan follower: 'cucu Oma'",
+      "Konten: health, life wisdom, motivasi, herbal knowledge",
+      "CTA bersifat reflektif, bukan jualan — ajak cucu Oma merenungkan",
+      "Bahasa Indonesia utama, English hanya untuk idiom/quotes singkat",
+      "Sedang menuju produk essential oil buatan Oma Hera sendiri — belum launch, jangan promosikan dulu",
+      "Jangan pakai bahasa yang terlalu formal atau kaku, harus terasa personal dan dekat"
+    ]
+  },
+  "Ci Angel": {
+    "tone": "profesional, ramah, santai, ceria",
+    "target": "first-time buyer, investor, keluarga yang butuh properti",
+    "cta": "save konten / hubungi Ci Angel untuk konsultasi properti",
+    "bahasa": "Indonesia",
+    "area": "Jabodetabek",
+    "background": "Angelyn Kim, ibu single 1 anak (sudah lulus kuliah), agen properti sebagai side hustle di samping bisnis laundry",
+    "rules": [
+      "Posisikan Ci Angel sebagai agen properti yang solutif, jujur, dan bisa dipercaya",
+      "Bukan cuma cari profit — tunjukkan sisi helpful dan genuine",
+      "Konten tidak selalu soal jualan properti — boleh cerita journey of life",
+      "CTA variatif: kadang 'save dulu', kadang 'hubungi Ci Angel', kadang reflektif",
+      "Tone ramah dan ceria tapi tetap profesional, jangan terlalu formal",
+      "Area fokus: Jabodetabek",
+      "Boleh share tips properti untuk first-time buyer, tips investasi, dll"
     ]
   }
 }

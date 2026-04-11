@@ -379,9 +379,10 @@ def get_next_content_id(data_rows, brand):
     """Cari Content ID terakhir untuk brand ini."""
     brand_upper = brand.strip().upper()
     prefixes = {
-        "PLAYPOD": "PP", "SABITAH": "SB", "COUNTY": "CT",
+        "SABITAH": "SB", "COUNTY": "CT",
         "LEGUS": "LG", "DEFARCHY": "DF", "HAPPY BABY": "HB",
         "PERSONAL BRAND DIMAS": "DM",
+        "OMA HERA": "OH", "CI ANGEL": "CA",
     }
     prefix = prefixes.get(brand_upper, brand_upper[:2].upper())
 
