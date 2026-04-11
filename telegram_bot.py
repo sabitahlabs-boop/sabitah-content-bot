@@ -541,6 +541,12 @@ def append_to_sheet(headers, col_map, brand, content_id, date_str,
             except Exception as e:
                 logger.error(f"[DOCS] Failed to update script_link: {e}")
 
+    # Auto-sync Summary & Content Brief
+    try:
+        sync_summary_and_brief()
+    except Exception as e:
+        logger.warning(f"[SYNC] Post-append sync failed: {e}")
+
     return new_row
 
 
@@ -1184,6 +1190,100 @@ def write_script_to_docs(brand, content_id, topik, content_type, script, hook=""
     except Exception as e:
         logger.error(f"[DOCS] Failed to create doc: {e}")
         return None
+
+
+def sync_summary_and_brief():
+    """Auto-sync Summary Dashboard dan Content Brief Reference dari Master Tracker."""
+    try:
+        service = get_sheets_service()
+        headers, data_rows, _ = read_sheet_info()
+        col_map = get_header_index(headers)
+        today = datetime.now()
+
+        # -- Summary Dashboard --
+        brand_stats = {}
+        status_counts = {"script_done": 0, "script_not": 0, "posted": 0, "visual_ready": 0}
+        total = len(data_rows)
+
+        for row in data_rows:
+            def col(field):
+                idx = col_map.get(field)
+                if idx is not None and idx < len(row):
+                    return row[idx].strip()
+                return ""
+
+            brand = col("brand") or "(Unknown)"
+            ct = col("content_type")
+            ss = col("script_status").lower()
+            vs = col("visual_status").lower()
+            ps = col("posting_status").lower()
+
+            if brand not in brand_stats:
+                brand_stats[brand] = {"total": 0, "reels": 0, "carousel": 0, "other": 0,
+                                      "script_done": 0, "visual_ready": 0, "posted": 0}
+            brand_stats[brand]["total"] += 1
+            if ct.lower() in ("reel", "reels"):
+                brand_stats[brand]["reels"] += 1
+            elif ct.lower() == "carousel":
+                brand_stats[brand]["carousel"] += 1
+            else:
+                brand_stats[brand]["other"] += 1
+            if "done" in ss:
+                brand_stats[brand]["script_done"] += 1
+                status_counts["script_done"] += 1
+            elif ss in ("", "not started"):
+                status_counts["script_not"] += 1
+            if "ready" in vs:
+                brand_stats[brand]["visual_ready"] += 1
+                status_counts["visual_ready"] += 1
+            if ps in ("done", "posted"):
+                brand_stats[brand]["posted"] += 1
+                status_counts["posted"] += 1
+
+        summary = [
+            ["MASTER CONTENT TRACKER — SUMMARY DASHBOARD"],
+            [f"Last updated: {today.strftime('%d %B %Y %H:%M')} WIB"],
+            [],
+            ["TOTAL CONTENT PER BRAND"],
+            ["Brand", "Total", "Reels", "Carousel", "Other", "Script Done", "Visual Ready", "Posted"],
+        ]
+        for brand in sorted(brand_stats.keys()):
+            s = brand_stats[brand]
+            summary.append([brand, str(s["total"]), str(s["reels"]), str(s["carousel"]),
+                           str(s["other"]), str(s["script_done"]), str(s["visual_ready"]), str(s["posted"])])
+        summary.extend([[], ["OVERALL STATUS"], ["Total Content", str(total)],
+                        ["Script Done", str(status_counts["script_done"])],
+                        ["Posted", str(status_counts["posted"])],
+                        ["Completion Rate", f"{round(status_counts['posted']/total*100) if total else 0}%"]])
+
+        service.spreadsheets().values().clear(spreadsheetId=SPREADSHEET_ID, range="'Summary Dashboard'").execute()
+        service.spreadsheets().values().update(
+            spreadsheetId=SPREADSHEET_ID, range="'Summary Dashboard'!A1",
+            valueInputOption="RAW", body={"values": summary},
+        ).execute()
+
+        # -- Content Brief Reference --
+        brief = [["CONTENT BRIEF REFERENCE — Auto-synced"],
+                 ["Content ID", "Brand", "Date", "Type", "Topic", "Hook", "Brief", "Script Status", "Visual Status", "Script Link"]]
+        for row in data_rows:
+            def col2(field):
+                idx = col_map.get(field)
+                if idx is not None and idx < len(row):
+                    return row[idx].strip()
+                return ""
+            brief.append([col2("content_id"), col2("brand"), col2("date"), col2("content_type"),
+                         col2("topik"), col2("hook"), col2("brief"), col2("script_status"),
+                         col2("visual_status"), col2("script_link")])
+
+        service.spreadsheets().values().clear(spreadsheetId=SPREADSHEET_ID, range="'Content Brief Reference'").execute()
+        service.spreadsheets().values().update(
+            spreadsheetId=SPREADSHEET_ID, range="'Content Brief Reference'!A1",
+            valueInputOption="RAW", body={"values": brief},
+        ).execute()
+
+        logger.info(f"[SYNC] Summary & Brief updated: {total} rows, {len(brand_stats)} brands")
+    except Exception as e:
+        logger.error(f"[SYNC] Failed to sync: {e}")
 
 
 # SHEET HELPERS (Visual Status)
