@@ -2769,6 +2769,7 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/team — register group ini sebagai team notification channel."""
+    logger.info(f"[TEAM] /team command received from chat_id={update.effective_chat.id} type={update.effective_chat.type}")
     chat_id = str(update.effective_chat.id)
     chat_type = update.effective_chat.type
 
@@ -2865,7 +2866,10 @@ def main():
     else:
         logger.warning("[REPORT] JobQueue not available, daily report disabled")
 
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(
+        allowed_updates=["message", "callback_query", "my_chat_member", "chat_member"],
+        drop_pending_updates=True,
+    )
 
 
 if __name__ == "__main__":
