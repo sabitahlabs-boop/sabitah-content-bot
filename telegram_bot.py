@@ -66,6 +66,21 @@ BRAND_GUIDELINES_FILE = os.path.join(SCRIPT_DIR, "brand_guidelines.json")
 CONTENT_TYPES = ["Carousel", "Reel", "Single Post", "Story"]
 MAX_QA_RETRIES = 2
 
+# Workflow: stage → PIC role → next stage
+WORKFLOW_STAGES = {
+    "script": {"pic": "Owner", "action": "Review & approve script", "next": "visual"},
+    "visual": {"pic": "Main Editor", "action": "Buat visual design dari script", "next": "review"},
+    "review": {"pic": "Owner", "action": "Review & approve visual", "next": "caption"},
+    "caption": {"pic": "Social Media Specialist", "action": "Buat caption & schedule posting", "next": "posting"},
+    "posting": {"pic": "Social Media Specialist", "action": "Posting ke Instagram", "next": "done"},
+}
+
+# PIC registry: name → {chat_id, username, role}
+# Pre-fill Dimas since we know his ID
+PIC_REGISTRY = {
+    "Dimas": {"chat_id": 5483599717, "username": "bakpaobabis", "role": "Owner"},
+}
+
 # Conversation states
 STATE_IDLE = "idle"
 STATE_WAIT_BRAND = "wait_brand"
@@ -3092,6 +3107,154 @@ async def team_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
+async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/register [nama] — daftarkan diri sebagai PIC tim Sabitah."""
+    user = update.effective_user
+    args = context.args
+
+    if not args:
+        team_list = "\n".join(f"  - {name} ({info['role']})" for name, info in TEAM_MEMBERS.items())
+        await update.message.reply_text(
+            f"Ketik /register [nama kamu]\n\nTim Sabitah:\n{team_list}\n\n"
+            f"Contoh: /register Firman"
+        )
+        return
+
+    name = args[0].strip().title()
+    if name not in TEAM_MEMBERS:
+        await update.message.reply_text(
+            f'Nama "{name}" tidak ada di tim Sabitah.\n'
+            f'Pilih: {", ".join(TEAM_MEMBERS.keys())}'
+        )
+        return
+
+    role = TEAM_MEMBERS[name]
+    PIC_REGISTRY[name] = {
+        "chat_id": user.id,
+        "username": user.username or "",
+        "role": role,
+    }
+
+    await update.message.reply_text(
+        f"Terdaftar!\n\n"
+        f"Nama: {name}\n"
+        f"Role: {role}\n"
+        f"Chat ID: {user.id}\n"
+        f"Username: @{user.username or 'none'}\n\n"
+        f"Kamu akan menerima reminder tugas harian."
+    )
+    logger.info(f"[PIC] Registered: {name} = {user.id} (@{user.username})")
+
+
+async def send_pic_reminders(context: ContextTypes.DEFAULT_TYPE):
+    """Job harian: kirim reminder personal ke setiap PIC berdasarkan pending tasks."""
+    try:
+        headers, data_rows, _ = read_sheet_info()
+        col_map = get_header_index(headers)
+    except Exception:
+        return
+
+    # Determine pending tasks per role
+    role_tasks = {}
+    for row in data_rows:
+        def col(field):
+            idx = col_map.get(field)
+            if idx is not None and idx < len(row):
+                return row[idx].strip()
+            return ""
+
+        cid = col("content_id")
+        brand = col("brand")
+        topik = col("topik")[:35]
+        ss = col("script_status").lower()
+        vs = col("visual_status").lower()
+        cs = col("caption_status").lower()
+        ps = col("posting_status").lower()
+        ct = col("content_type")
+
+        if not cid or not brand:
+            continue
+
+        # Determine what stage this content is at and who should work on it
+        if "done" not in ss:
+            # Script not done → Owner (Dimas) needs to generate/approve
+            role = "Owner"
+            action = f"Generate/review script"
+        elif vs in ("ready for visual", "not started", ""):
+            if "done" in ss:
+                # Script done, visual not done → Editor
+                role = "Main Editor"
+                action = f"Buat visual design"
+        elif "designed" in vs or "pending" in vs:
+            # Visual done, needs review → Owner
+            role = "Owner"
+            action = f"Review visual design"
+        elif cs in ("not started", ""):
+            # Visual approved, caption needed → Social Media
+            role = "Social Media Specialist"
+            action = f"Buat caption & jadwal posting"
+        elif ps in ("not started", ""):
+            # Caption done, needs posting → Social Media
+            role = "Social Media Specialist"
+            action = f"Posting ke Instagram"
+        else:
+            continue  # Done or unknown state
+
+        if role not in role_tasks:
+            role_tasks[role] = []
+        role_tasks[role].append(f"  [{cid}] {brand} — {topik}\n    -> {action}")
+
+    # Send to each registered PIC
+    for name, info in PIC_REGISTRY.items():
+        role = info.get("role", "")
+        chat_id = info.get("chat_id")
+        if not chat_id or role not in role_tasks:
+            continue
+
+        tasks = role_tasks[role]
+        if not tasks:
+            continue
+
+        # Limit to 15 most important
+        shown = tasks[:15]
+        remaining = len(tasks) - len(shown)
+
+        msg = (
+            f"Pagi {name}! Ini tugas kamu hari ini:\n\n"
+            f"Role: {role}\n"
+            f"Pending: {len(tasks)} konten\n\n"
+        )
+        msg += "\n".join(shown)
+        if remaining > 0:
+            msg += f"\n\n  ... dan {remaining} lagi"
+        msg += "\n\nSemangat! Cek tracker untuk detail."
+
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=msg)
+            logger.info(f"[PIC] Reminder sent to {name}: {len(tasks)} tasks")
+        except Exception as e:
+            logger.error(f"[PIC] Failed to send to {name}: {e}")
+
+    # Also post summary to group
+    group_id = TEAM_GROUP_ID or context.bot_data.get("team_group_id", "")
+    if group_id and role_tasks:
+        summary = "DAILY TASK ASSIGNMENT\n\n"
+        for role, tasks in sorted(role_tasks.items()):
+            # Find PIC name for this role
+            pic_name = next((n for n, i in PIC_REGISTRY.items() if i.get("role") == role), role)
+            username = PIC_REGISTRY.get(pic_name, {}).get("username", "")
+            mention = f"@{username}" if username else pic_name
+
+            summary += f"{mention} ({role}): {len(tasks)} pending\n"
+
+        summary += "\nDetail sudah dikirim ke masing-masing PIC."
+
+        try:
+            await context.bot.send_message(chat_id=int(group_id), text=summary)
+        except Exception:
+            pass
+
+
 async def chatid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/chatid — tampilkan chat ID untuk setup."""
     chat = update.effective_chat
@@ -3132,6 +3295,8 @@ def main():
     print("    - Team notifications ke Telegram Group")
     print("    - Daily report jam 08:00 WIB")
     print("    - Deadline reminder jam 08:30 WIB")
+    print("    - PIC task reminder jam 09:00 WIB")
+    print(f"  PIC registered: {', '.join(PIC_REGISTRY.keys()) or 'none'}")
     print("=" * 60)
     print("\n  Bot sedang berjalan... (Ctrl+C untuk stop)\n")
 
@@ -3143,6 +3308,7 @@ def main():
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CommandHandler("report", report_command))
     app.add_handler(CommandHandler("team", team_command))
+    app.add_handler(CommandHandler("register", register_command))
     app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -3163,6 +3329,11 @@ def main():
         reminder_time = dt_time(hour=8, minute=30, second=0, tzinfo=wib)
         app.job_queue.run_daily(notify_deadline_reminder, time=reminder_time, name="deadline_reminder")
         logger.info(f"[REPORT] Deadline reminder scheduled at {reminder_time} WIB")
+
+        # PIC task reminder jam 09:00 WIB
+        pic_time = dt_time(hour=9, minute=0, second=0, tzinfo=wib)
+        app.job_queue.run_daily(send_pic_reminders, time=pic_time, name="pic_reminder")
+        logger.info(f"[PIC] PIC reminder scheduled at {pic_time} WIB")
     else:
         logger.warning("[REPORT] JobQueue not available, daily report disabled")
 
