@@ -2058,48 +2058,60 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"[DOC] Extracted {len(doc_text)} chars from {file_name}")
 
-        # Truncate if too long
-        if len(doc_text) > 8000:
-            doc_text = doc_text[:8000] + "\n\n[... terpotong, terlalu panjang]"
-
-        # Use Claude to analyze the document
+        # Use Claude to analyze — detect chapters and summarize
         claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        # Send full doc (up to 50k chars for Claude context)
+        analysis_text_input = doc_text[:50000]
+
         analysis = claude_client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=500,
-            messages=[{"role": "user", "content": f"""Analisis dokumen/skrip berikut dan extract informasi:
+            max_tokens=2000,
+            messages=[{"role": "user", "content": f"""Analisis dokumen berikut secara menyeluruh.
 
 DOKUMEN:
-\"\"\"{doc_text}\"\"\"
+\"\"\"{analysis_text_input}\"\"\"
 
-Extract:
-1. Topik utama dokumen ini
-2. Poin-poin kunci / insight utama (max 5 poin)
-3. Jika ini draft skrip konten, identifikasi format-nya (carousel, reel, artikel, dll)
-4. Ringkasan singkat (2-3 kalimat)
+TUGAS:
+1. Identifikasi topik utama dokumen
+2. Ringkasan singkat (2-3 kalimat)
+3. Deteksi SEMUA bab/chapter/section dalam dokumen. Untuk setiap bab, berikan judul dan ringkasan singkat isi bab tersebut.
 
 Respond dalam JSON (tanpa markdown code block):
-{{"topik": "...", "poin_kunci": ["...", "..."], "format_konten": "...", "ringkasan": "..."}}"""}],
+{{
+  "topik": "topik utama",
+  "ringkasan": "ringkasan 2-3 kalimat",
+  "chapters": [
+    {{"chapter_num": 1, "title": "judul bab", "summary": "ringkasan isi bab 1-2 kalimat"}},
+    {{"chapter_num": 2, "title": "judul bab", "summary": "ringkasan isi bab"}},
+    ...
+  ]
+}}"""}],
         )
         analysis_text = analysis.content[0].text.strip()
         analysis_data = safe_json_loads(analysis_text)
 
         if not analysis_data:
-            analysis_data = {"topik": "Dokumen yang diupload", "ringkasan": doc_text[:200]}
+            analysis_data = {"topik": "Dokumen yang diupload", "ringkasan": doc_text[:200], "chapters": []}
 
-        # Show analysis
-        ringkasan = analysis_data.get("ringkasan", "")
         topik = analysis_data.get("topik", "")
-        poin = analysis_data.get("poin_kunci", [])
-        format_konten = analysis_data.get("format_konten", "Carousel")
+        ringkasan = analysis_data.get("ringkasan", "")
+        chapters = analysis_data.get("chapters", [])
 
+        # Show analysis with chapters
         preview = f"📋 *Hasil Analisis Dokumen:*\n\n"
         preview += f"*Topik:* {topik}\n"
         if ringkasan:
             preview += f"*Ringkasan:* {ringkasan}\n"
-        if poin:
-            preview += "*Poin Kunci:*\n" + "\n".join(f"  • {p}" for p in poin[:5]) + "\n"
-        preview += f"*Format:* {format_konten}\n"
+        if chapters:
+            preview += f"\n*Ditemukan {len(chapters)} bab:*\n"
+            for ch in chapters:
+                preview += f"  {ch.get('chapter_num', '?')}. {ch.get('title', '?')}\n"
+        preview += f"\n_Total: {len(doc_text)} karakter dibaca_\n"
+
+        # Truncate preview if too long for Telegram
+        if len(preview) > 4000:
+            preview = preview[:3990] + "..."
 
         await update.message.reply_text(preview, parse_mode="Markdown")
 
@@ -2107,7 +2119,7 @@ Respond dalam JSON (tanpa markdown code block):
         session = get_session(context)
         session["_doc_text"] = doc_text
         session["_doc_topik"] = topik
-        session["_doc_format"] = format_konten
+        session["_doc_chapters"] = chapters
         session["_doc_analysis"] = analysis_data
         session["state"] = STATE_WAIT_DOC_BRAND
 
@@ -2156,13 +2168,12 @@ Respond dalam JSON (tanpa markdown code block):
 
 
 async def _process_doc_with_brand(source, context, session):
-    """Process uploaded doc into branded script.
-    source can be Update (from text), CallbackQuery (from button), or message object."""
+    """Process uploaded doc into branded script(s).
+    If chapters detected, generates 1 content per chapter."""
     # Get reply function regardless of source type
     if hasattr(source, 'message') and source.message:
         reply = source.message.reply_text
     elif hasattr(source, 'get_bot'):
-        # It's a CallbackQuery
         reply = source.message.reply_text
     else:
         reply = source.reply_text
@@ -2170,65 +2181,167 @@ async def _process_doc_with_brand(source, context, session):
     brand = session["brand"]
     doc_text = session.get("_doc_text", "")
     doc_topik = session.get("_doc_topik", "Konten dari dokumen")
-    doc_analysis = session.get("_doc_analysis", {})
+    chapters = session.get("_doc_chapters", [])
     content_type = session.get("_doc_content_type", "Carousel")
 
     guidelines = get_guidelines_for_brand(brand)
     guidelines_text = format_guidelines_text(brand, guidelines) if guidelines else ""
 
-    await reply(
-        f"🔄 Mengadaptasi dokumen menjadi script {content_type} untuk *{brand}*...",
-        parse_mode="Markdown",
-    )
-
-    try:
-        claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-        # Build prompt based on content type
-        if content_type == "Reel":
-            format_instruction = """Format output sebagai SCRIPT REELS (30-60 detik):
+    # Build format instruction
+    if content_type in ("Reel", "Reels"):
+        format_instruction = """Format output sebagai SCRIPT REELS (30-60 detik):
 OPENING (0-5 detik):
 Shot: [deskripsi visual]
-Narasi: [teks]
+Narasi: [teks yang diucapkan]
 
 POINT 1 (5-15 detik):
 Shot: [deskripsi visual]
 Narasi: [teks]
 
-... (lanjutkan)
+POINT 2 (15-30 detik):
+Shot: [deskripsi visual]
+Narasi: [teks]
 
-CTA (akhir):
+POINT 3 (30-45 detik):
+Shot: [deskripsi visual]
+Narasi: [teks]
+
+CTA (45-60 detik):
 Shot: [deskripsi visual]
 Narasi: [CTA sesuai brand]"""
-        else:
-            format_instruction = """Format output sebagai SCRIPT CAROUSEL 7 slide:
+    else:
+        format_instruction = """Format output sebagai SCRIPT CAROUSEL 7 slide:
 SLIDE 1 (COVER):
 Judul: [hook menarik]
 Teks: [teks pendek]
 Visual: [arahan visual]
 
-SLIDE 2:
+SLIDE 2-6:
 Judul: [subjudul]
-Teks: [konten]
+Teks: [konten edukatif/insight]
 Visual: [arahan visual]
 
-... sampai SLIDE 7 (CTA)"""
+SLIDE 7 (CTA):
+Judul: [ajakan]
+Teks: [CTA sesuai brand guidelines]
+Visual: [arahan visual]
 
-        prompt = f"""Kamu adalah content strategist untuk brand "{brand}".
+Maks 50 kata per slide."""
+
+    try:
+        claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        # If chapters detected, generate 1 content per chapter
+        if chapters and len(chapters) > 1:
+            total = len(chapters)
+            await reply(
+                f"📚 Ditemukan *{total} bab* dalam dokumen.\n"
+                f"Memproses 1 konten {content_type} per bab untuk *{brand}*...\n"
+                f"Ini akan memakan waktu beberapa menit.",
+                parse_mode="Markdown",
+            )
+
+            generated = []
+            for idx, chapter in enumerate(chapters):
+                ch_num = chapter.get("chapter_num", idx + 1)
+                ch_title = chapter.get("title", f"Bab {ch_num}")
+                ch_summary = chapter.get("summary", "")
+
+                await reply(f"🔄 [{idx+1}/{total}] Generating: {ch_title}...")
+
+                # Find chapter content in doc_text
+                # Use Claude to extract + generate in one call
+                prompt = f"""Kamu adalah content strategist untuk brand "{brand}".
+
+BRAND GUIDELINES:
+{guidelines_text}
+
+DOKUMEN LENGKAP:
+\"\"\"{doc_text[:50000]}\"\"\"
+
+TUGAS:
+Dari dokumen di atas, fokus pada BAB {ch_num}: "{ch_title}".
+Ringkasan bab: {ch_summary}
+
+Buatkan script konten Instagram berdasarkan ISI BAB INI SAJA.
+- Ambil pesan utama, insight, dan wisdom dari bab ini
+- Sesuaikan tone dan bahasa dengan brand guidelines
+- Buat hook yang menarik dan relevan dengan isi bab
+- CTA di akhir HARUS sesuai brand guidelines
+
+{format_instruction}
+
+PENTING:
+- Bahasa: {guidelines.get('bahasa', 'Indonesia') if guidelines else 'Indonesia'}
+- Tone: {guidelines.get('tone', 'profesional') if guidelines else 'profesional'}
+- CTA: {guidelines.get('cta', 'follow') if guidelines else 'follow'}
+- Tulis script LENGKAP berdasarkan isi bab, bukan placeholder
+- Jangan ulang isi bab secara verbatim, tapi adaptasi jadi konten yang engaging"""
+
+                try:
+                    msg = claude_client.messages.create(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=2000,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                    script = msg.content[0].text.strip()
+
+                    # Save to Sheet
+                    headers, data_rows, _ = read_sheet_info()
+                    col_map = get_header_index(headers)
+                    content_id = get_next_content_id(data_rows, brand)
+
+                    append_to_sheet(
+                        headers, col_map, brand, content_id, "",
+                        content_type, ch_title, "", script, "doc-upload",
+                    )
+
+                    if content_type == "Carousel":
+                        update_sheet_visual_status(content_id, "Ready for Visual")
+
+                    generated.append({"id": content_id, "title": ch_title})
+                    logger.info(f"[DOC] Generated {content_id}: {brand} - {ch_title}")
+
+                    import asyncio
+                    await asyncio.sleep(1)  # Rate limit
+
+                except Exception as e:
+                    logger.error(f"[DOC] Error on chapter {ch_num}: {e}")
+                    await reply(f"⚠️ Gagal generate bab {ch_num}: {str(e)[:100]}")
+
+            # Summary
+            if generated:
+                summary = f"✅ *Selesai! {len(generated)} konten berhasil di-generate:*\n\n"
+                for item in generated:
+                    summary += f"  • {item['id']} — {item['title']}\n"
+                summary += f"\nBrand: {brand} | Tipe: {content_type}\n"
+                summary += "Semua tersimpan di Google Sheet tracker."
+                if len(summary) > 4096:
+                    summary = summary[:4090] + "..."
+                await reply(summary, parse_mode="Markdown")
+            else:
+                await reply("❌ Tidak ada konten yang berhasil di-generate.")
+
+        else:
+            # Single content (no chapters or 1 chapter)
+            await reply(
+                f"🔄 Mengadaptasi dokumen menjadi script {content_type} untuk *{brand}*...",
+                parse_mode="Markdown",
+            )
+
+            prompt = f"""Kamu adalah content strategist untuk brand "{brand}".
 
 BRAND GUIDELINES:
 {guidelines_text}
 
 DOKUMEN SUMBER:
-\"\"\"{doc_text}\"\"\"
+\"\"\"{doc_text[:50000]}\"\"\"
 
 TUGAS:
 Adaptasi dokumen di atas menjadi script konten Instagram yang siap pakai.
 - Ambil insight dan poin kunci dari dokumen
 - Sesuaikan tone, bahasa, dan CTA dengan brand guidelines
 - Buat hook yang menarik di awal
-- Pastikan setiap slide/section padat dan engaging
-- Maks 50 kata per slide (untuk carousel)
 - CTA di akhir HARUS sesuai brand guidelines
 
 {format_instruction}
@@ -2239,51 +2352,41 @@ PENTING:
 - CTA: {guidelines.get('cta', 'follow') if guidelines else 'follow'}
 - Tulis script LENGKAP, bukan placeholder"""
 
-        msg = claude_client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        script = msg.content[0].text.strip()
+            msg = claude_client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=2000,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            script = msg.content[0].text.strip()
 
-        # Save to Sheet
-        headers, data_rows, _ = read_sheet_info()
-        col_map = get_header_index(headers)
-        content_id = get_next_content_id(data_rows, brand)
+            headers, data_rows, _ = read_sheet_info()
+            col_map = get_header_index(headers)
+            content_id = get_next_content_id(data_rows, brand)
 
-        append_to_sheet(
-            headers, col_map, brand, content_id, "",
-            content_type, doc_topik, "", script, "doc-upload",
-        )
-
-        if content_type == "Carousel":
-            update_sheet_visual_status(content_id, "Ready for Visual")
-
-        # Reply
-        header = (
-            f"✅ Script dari dokumen berhasil di-generate!\n"
-            f"Content ID: {content_id}\n"
-            f"Brand: {brand} | Tipe: {content_type}\n"
-            f"Topik: {doc_topik}\n\n"
-        )
-
-        full_reply = header + script
-        if len(full_reply) <= 4096:
-            await reply(full_reply)
-        else:
-            await reply(header + "(Script dikirim di pesan berikut)")
-            for i in range(0, len(script), 4096):
-                await reply(script[i : i + 4096])
-
-        if content_type == "Carousel":
-            await reply(
-                f"✅ Script carousel {brand} dari dokumen sudah tersimpan di tracker.\n\n"
-                f"Untuk generate visual, buka Claude.ai Project dan ketik:\n"
-                f"*generate carousel dari tracker*",
-                parse_mode="Markdown",
+            append_to_sheet(
+                headers, col_map, brand, content_id, "",
+                content_type, doc_topik, "", script, "doc-upload",
             )
 
-        logger.info(f"[DOC] Generated {content_id}: {brand} - {doc_topik}")
+            if content_type == "Carousel":
+                update_sheet_visual_status(content_id, "Ready for Visual")
+
+            header = (
+                f"✅ Script berhasil di-generate!\n"
+                f"Content ID: {content_id}\n"
+                f"Brand: {brand} | Tipe: {content_type}\n"
+                f"Topik: {doc_topik}\n\n"
+            )
+
+            full_reply_text = header + script
+            if len(full_reply_text) <= 4096:
+                await reply(full_reply_text)
+            else:
+                await reply(header + "(Script dikirim di pesan berikut)")
+                for i in range(0, len(script), 4096):
+                    await reply(script[i : i + 4096])
+
+            logger.info(f"[DOC] Generated {content_id}: {brand} - {doc_topik}")
 
     except Exception as e:
         logger.error(f"[DOC] Error generating script: {e}", exc_info=True)
