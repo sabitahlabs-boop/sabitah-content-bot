@@ -55,8 +55,25 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/calendar",
 ]
 SHEET_NAME = "Master Tracker"
+GOOGLE_CALENDAR_ID = os.environ.get(
+    "GOOGLE_CALENDAR_ID",
+    "620b45ea30852b6d75b70662b75f8ff395455b4dedb1c46cd8bc800a25413e37@group.calendar.google.com",
+)
+
+# Brand colors for calendar events
+BRAND_COLORS = {
+    "Sabitah": "9",       # Blueberry
+    "County": "5",        # Banana
+    "LEGUS": "11",        # Tomato
+    "Defarchy": "10",     # Basil
+    "Happy Baby": "6",    # Tangerine
+    "Personal Brand Dimas": "7",  # Peacock
+    "Oma Hera": "3",      # Grape
+    "Ci Angel": "2",      # Sage
+}
 
 
 # Paths untuk file lokal (development)
@@ -555,6 +572,14 @@ def append_to_sheet(headers, col_map, brand, content_id, date_str,
                         break
             except Exception as e:
                 logger.error(f"[DOCS] Failed to update script_link: {e}")
+
+    # Add to Google Calendar if date is set
+    if date_str and brand:
+        try:
+            add_to_google_calendar(brand, content_id, topik, content_type, date_str,
+                                   field_values.get("hook", ""))
+        except Exception as e:
+            logger.warning(f"[CALENDAR] Post-append calendar failed: {e}")
 
     # Auto-sync Summary & Content Brief
     try:
@@ -1204,6 +1229,68 @@ def write_script_to_docs(brand, content_id, topik, content_type, script, hook=""
         return doc_url
     except Exception as e:
         logger.error(f"[DOCS] Failed to create doc: {e}")
+        return None
+
+
+def add_to_google_calendar(brand, content_id, topik, content_type, date_str, hook=""):
+    """Tambah event ke Google Calendar. Return event link atau None."""
+    if not GOOGLE_CALENDAR_ID or not date_str:
+        return None
+
+    try:
+        # Parse date
+        post_date = None
+        for fmt in ["%b %d", "%d %b", "%Y-%m-%d", "%d/%m/%Y", "%B %d", "%b %d, %Y"]:
+            try:
+                post_date = datetime.strptime(date_str.strip(), fmt)
+                if post_date.year == 1900:
+                    post_date = post_date.replace(year=2026)
+                break
+            except ValueError:
+                continue
+
+        if not post_date:
+            return None
+
+        creds = get_google_credentials()
+        cal = build("calendar", "v3", credentials=creds)
+
+        color_id = BRAND_COLORS.get(brand, "1")
+        title = f"[{content_type}] {brand} — {hook or topik}"[:100]
+        description = (
+            f"Content ID: {content_id}\n"
+            f"Brand: {brand}\n"
+            f"Tipe: {content_type}\n"
+            f"Topik: {topik}\n"
+            f"Hook: {hook}\n\n"
+            f"Status: Scheduled for posting"
+        )
+
+        event = {
+            "summary": title,
+            "description": description,
+            "start": {
+                "date": post_date.strftime("%Y-%m-%d"),
+                "timeZone": "Asia/Jakarta",
+            },
+            "end": {
+                "date": post_date.strftime("%Y-%m-%d"),
+                "timeZone": "Asia/Jakarta",
+            },
+            "colorId": color_id,
+            "reminders": {
+                "useDefault": False,
+                "overrides": [
+                    {"method": "popup", "minutes": 60},
+                ],
+            },
+        }
+
+        result = cal.events().insert(calendarId=GOOGLE_CALENDAR_ID, body=event).execute()
+        logger.info(f"[CALENDAR] Event created: {content_id} on {post_date.strftime('%Y-%m-%d')}")
+        return result.get("htmlLink")
+    except Exception as e:
+        logger.error(f"[CALENDAR] Failed to create event: {e}")
         return None
 
 
