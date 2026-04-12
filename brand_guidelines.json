@@ -9,7 +9,25 @@
       "Gunakan contoh nyata dari dunia bisnis Indonesia",
       "CTA tidak boleh hard sell, harus terasa natural",
       "Boleh pakai istilah English untuk konsep bisnis/branding"
-    ]
+    ],
+    "visual": {
+      "primary_color": "#1B2A4A",
+      "secondary_color": "#F5A623",
+      "accent_color": "#FFFFFF",
+      "background_color": "#F7F8FA",
+      "font_heading": "Playfair Display Bold",
+      "font_body": "Plus Jakarta Sans",
+      "style": "clean, premium, minimalist with strategic use of gold accent",
+      "mood": "professional yet approachable — like a trusted business partner",
+      "logo_placement": "top-left or bottom-center",
+      "carousel_rules": [
+        "Cover slide: bold heading with dark navy background + gold accent",
+        "Content slides: white/light background with navy text for readability",
+        "CTA slide: navy background with gold CTA button/text",
+        "Consistent padding and alignment across all slides",
+        "Use icons or simple illustrations, avoid stock photos"
+      ]
+    }
   },
   "County": {
     "tone": "profesional tapi friendly",
@@ -21,7 +39,25 @@
       "Highlight kemudahan dan efisiensi County app",
       "Jangan terlalu teknis, tetap approachable",
       "CTA arahkan ke download atau coba County app"
-    ]
+    ],
+    "visual": {
+      "primary_color": "#2D6A4F",
+      "secondary_color": "#40916C",
+      "accent_color": "#D4AF37",
+      "background_color": "#F0F7F4",
+      "font_heading": "Poppins Bold",
+      "font_body": "Poppins Regular",
+      "style": "clean, structured, trustworthy with green tones reflecting growth",
+      "mood": "reliable and modern — UMKM partner that simplifies business",
+      "logo_placement": "top-left",
+      "carousel_rules": [
+        "Cover slide: deep green background with white bold text",
+        "Content slides: light mint/white background with green headings",
+        "Use simple infographic-style icons for features",
+        "CTA slide: green gradient background with clear action button",
+        "Numbers and stats should be large and prominent"
+      ]
+    }
   },
   "LEGUS": {
     "tone": "terpercaya, authoritative",
@@ -33,7 +69,26 @@
       "Gunakan data atau fakta hukum yang relevan",
       "Jangan pakai bahasa gaul, tetap formal tapi tidak kaku",
       "CTA selalu arahkan ke konsultasi gratis"
-    ]
+    ],
+    "visual": {
+      "primary_color": "#1A1A2E",
+      "secondary_color": "#16213E",
+      "accent_color": "#C9A227",
+      "background_color": "#F5F5F0",
+      "font_heading": "DM Serif Display",
+      "font_body": "Source Sans Pro",
+      "style": "authoritative, formal, law-firm aesthetic with gold accents",
+      "mood": "trustworthy and established — like a reliable legal advisor",
+      "logo_placement": "top-left or top-center",
+      "carousel_rules": [
+        "Cover slide: dark navy/charcoal background with gold heading",
+        "Content slides: cream/off-white background with dark text",
+        "Use structured layouts with clear hierarchy",
+        "Legal facts/data in highlighted boxes or cards",
+        "CTA slide: dark background with gold 'Konsultasi Gratis' button",
+        "Avoid playful elements — keep it dignified"
+      ]
+    }
   },
   "Defarchy": {
     "tone": "energik, young",
@@ -48,7 +103,26 @@
       "CTA arahkan ke koleksi atau produk Defarchy",
       "Produk utama: motor listrik dan sepeda listrik",
       "Highlight keunggulan EV: hemat, ramah lingkungan, cocok commuting kota"
-    ]
+    ],
+    "visual": {
+      "primary_color": "#FF4500",
+      "secondary_color": "#1A1A1A",
+      "accent_color": "#00E676",
+      "background_color": "#0D0D0D",
+      "font_heading": "Bebas Neue",
+      "font_body": "Inter",
+      "style": "bold, high-contrast, street/urban aesthetic with neon accents",
+      "mood": "energetic and rebellious — electric mobility for the next generation",
+      "logo_placement": "top-right or bottom-right",
+      "carousel_rules": [
+        "Cover slide: dark/black background with bold orange or neon green text",
+        "Content slides: dark theme dominant, high contrast text",
+        "Use dynamic angles, geometric shapes, urban textures",
+        "Product photos with dramatic lighting if available",
+        "CTA slide: gradient orange-to-green with bold action text",
+        "Typography should feel impactful — large, uppercase headings"
+      ]
+    }
   },
   "Happy Baby": {
     "tone": "warm, caring, community-driven",
@@ -63,7 +137,26 @@
       "CTA harus terasa sebagai rekomendasi teman, bukan jualan",
       "Produk saat ini: kaos kaki bayi, tapi sosmed lebih fokus sebagai wadah komunitas ibu muda tentang parenting",
       "Bangun engagement sebagai komunitas, bukan toko online"
-    ]
+    ],
+    "visual": {
+      "primary_color": "#F8B4C8",
+      "secondary_color": "#7EC8E3",
+      "accent_color": "#FFD700",
+      "background_color": "#FFF9FB",
+      "font_heading": "Quicksand Bold",
+      "font_body": "Nunito",
+      "style": "soft, pastel, rounded shapes, warm and gentle",
+      "mood": "like a warm hug — safe, comforting, nurturing",
+      "logo_placement": "top-center or bottom-center",
+      "carousel_rules": [
+        "Cover slide: soft pink or baby blue background with rounded white text",
+        "Content slides: white/cream background with pastel accents",
+        "Use soft illustrations, baby-friendly icons, rounded corners",
+        "Avoid harsh colors or sharp geometric shapes",
+        "CTA slide: pastel gradient with friendly invitation tone",
+        "Photos should feel warm, natural lighting, real moments"
+      ]
+    }
   },
   "Personal Brand Dimas": {
     "tone": "honest, raw, reflective",
@@ -76,7 +169,26 @@
       "Boleh vulnerable dan reflective",
       "CTA: follow, engage, atau share pengalaman serupa",
       "Dimas adalah owner Sabitah dan creator bot ini"
-    ]
+    ],
+    "visual": {
+      "primary_color": "#2C2C2C",
+      "secondary_color": "#E8E8E8",
+      "accent_color": "#FF6B35",
+      "background_color": "#FAFAFA",
+      "font_heading": "Space Grotesk Bold",
+      "font_body": "Inter",
+      "style": "minimal, raw, text-forward with subtle personal touch",
+      "mood": "authentic and real — like reading someone's honest journal",
+      "logo_placement": "none or subtle watermark bottom-right",
+      "carousel_rules": [
+        "Cover slide: dark charcoal or white with bold statement text",
+        "Content slides: clean white background, large typography-focused",
+        "Minimal graphics — let the words speak",
+        "Use orange accent sparingly for emphasis on key points",
+        "CTA slide: simple, personal invitation — not corporate",
+        "Feel like a personal note, not a designed poster"
+      ]
+    }
   },
   "Oma Hera": {
     "tone": "wise, menenangkan, hangat seperti nenek bicara ke cucu",
@@ -92,7 +204,26 @@
       "Bahasa Indonesia utama, English hanya untuk idiom/quotes singkat",
       "Sedang menuju produk essential oil buatan Oma Hera sendiri — belum launch, jangan promosikan dulu",
       "Jangan pakai bahasa yang terlalu formal atau kaku, harus terasa personal dan dekat"
-    ]
+    ],
+    "visual": {
+      "primary_color": "#5B7553",
+      "secondary_color": "#8B6914",
+      "accent_color": "#F5E6CC",
+      "background_color": "#FBF8F1",
+      "font_heading": "Lora Bold",
+      "font_body": "Lato",
+      "style": "warm, organic, earthy tones with botanical/herbal elements",
+      "mood": "like sitting in grandma's garden — peaceful, wise, nurturing",
+      "logo_placement": "bottom-center with small tagline",
+      "carousel_rules": [
+        "Cover slide: warm cream/earthy background with elegant serif heading",
+        "Content slides: soft cream background with green accents",
+        "Use botanical illustrations, leaf motifs, natural textures",
+        "Quotes in elegant serif font with decorative flourish",
+        "CTA slide: warm earthy tone with reflective question",
+        "Photos should feel natural, warm-toned, garden/herbal aesthetic"
+      ]
+    }
   },
   "Ci Angel": {
     "tone": "profesional, ramah, santai, ceria",
@@ -109,6 +240,25 @@
       "Tone ramah dan ceria tapi tetap profesional, jangan terlalu formal",
       "Area fokus: Jabodetabek",
       "Boleh share tips properti untuk first-time buyer, tips investasi, dll"
-    ]
+    ],
+    "visual": {
+      "primary_color": "#E91E63",
+      "secondary_color": "#1565C0",
+      "accent_color": "#FFD54F",
+      "background_color": "#FFFDF7",
+      "font_heading": "Raleway Bold",
+      "font_body": "Open Sans",
+      "style": "bright, cheerful, clean with property/lifestyle aesthetic",
+      "mood": "friendly and trustworthy — like a helpful neighbor who knows real estate",
+      "logo_placement": "top-left with contact info bottom",
+      "carousel_rules": [
+        "Cover slide: bright pink or blue background with cheerful white text",
+        "Content slides: white background with pink/blue section headers",
+        "Use property icons, home illustrations, location pins",
+        "Tips and stats in clean card-style layouts",
+        "CTA slide: warm yellow accent with 'Hubungi Ci Angel' or 'Save dulu!'",
+        "Include contact info or IG handle on last slide"
+      ]
+    }
   }
 }

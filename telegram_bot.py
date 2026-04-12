@@ -40,6 +40,7 @@ if os.path.exists(FFMPEG_DIR):
 # ============================================================
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+CANVA_ACCESS_TOKEN = os.environ.get("CANVA_ACCESS_TOKEN", "")
 SPREADSHEET_ID = os.environ.get("GOOGLE_SPREADSHEET_ID", "13_BnnBjVLRcpJAiyieBqF7tnuoRZ7ij7fs0u8Z9Hd1Y")
 REPORT_CHAT_ID = os.environ.get("REPORT_CHAT_ID", "")  # Telegram chat ID untuk daily report
 TEAM_GROUP_ID = os.environ.get("TEAM_GROUP_ID", "")  # Telegram group ID untuk notifikasi tim
@@ -82,6 +83,23 @@ BRAND_GUIDELINES_FILE = os.path.join(SCRIPT_DIR, "brand_guidelines.json")
 
 CONTENT_TYPES = ["Carousel", "Reel", "Single Post", "Story"]
 MAX_QA_RETRIES = 2
+
+# Content Type → Canva design dimensions & slide count
+DESIGN_FORMAT_MAP = {
+    "carousel": {"width": 1080, "height": 1080, "slides": 7, "canva_type": "instagram_post"},
+    "carousel (5 slides)": {"width": 1080, "height": 1080, "slides": 5, "canva_type": "instagram_post"},
+    "carousel (6 slides)": {"width": 1080, "height": 1080, "slides": 6, "canva_type": "instagram_post"},
+    "carousel (7 slides)": {"width": 1080, "height": 1080, "slides": 7, "canva_type": "instagram_post"},
+    "single post": {"width": 1080, "height": 1080, "slides": 1, "canva_type": "instagram_post"},
+    "feed": {"width": 1080, "height": 1080, "slides": 1, "canva_type": "instagram_post"},
+    "feed (single image)": {"width": 1080, "height": 1080, "slides": 1, "canva_type": "instagram_post"},
+    "feed + stories": {"width": 1080, "height": 1080, "slides": 1, "canva_type": "instagram_post"},
+    "reel": {"width": 1080, "height": 1920, "slides": 1, "canva_type": "your_story"},
+    "reels": {"width": 1080, "height": 1920, "slides": 1, "canva_type": "your_story"},
+    "story": {"width": 1080, "height": 1920, "slides": 1, "canva_type": "your_story"},
+    "stories": {"width": 1080, "height": 1920, "slides": 1, "canva_type": "your_story"},
+    "your_story": {"width": 1080, "height": 1920, "slides": 1, "canva_type": "your_story"},
+}
 
 # Workflow: stage → PIC role → next stage
 WORKFLOW_STAGES = {
@@ -532,7 +550,7 @@ def append_to_sheet(headers, col_map, brand, content_id, date_str,
         "notes": f"QA: {qa_status}",
         "canva_link": "",
         "visual_status": (
-            "Ready for Visual" if content_type and content_type.lower() == "carousel"
+            "Ready for Visual" if content_type and content_type.lower() in ("carousel", "single post", "feed")
             else "Skip - Video Manual" if content_type and content_type.lower() in ("reel", "reels")
             else "Not Started"
         ),
@@ -1500,6 +1518,677 @@ def update_sheet_visual_status(content_id, status):
                 return
     except Exception as e:
         logger.error(f"[SHEET] Failed to update visual status: {e}")
+
+
+# ============================================================
+# CANVA DESIGN CREATION
+# ============================================================
+
+CANVA_API_BASE = "https://api.canva.com/rest/v1"
+
+
+def canva_create_design(title, width=1080, height=1080):
+    """Create a design via Canva Connect API. Returns (design_id, edit_url, view_url)."""
+    import urllib.request
+    if not CANVA_ACCESS_TOKEN:
+        raise ValueError("CANVA_ACCESS_TOKEN tidak di-set. Set env var dulu.")
+
+    data = json.dumps({
+        "design_type": {"type": "custom", "width": width, "height": height},
+        "title": title[:255],
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{CANVA_API_BASE}/designs",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {CANVA_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req) as resp:
+        result = json.loads(resp.read())
+
+    design = result.get("design", {})
+    return (
+        design.get("id", ""),
+        design.get("urls", {}).get("edit_url", ""),
+        design.get("urls", {}).get("view_url", ""),
+    )
+
+
+def get_design_format(content_type_raw):
+    """Get design dimensions and slide count from content type."""
+    ct = content_type_raw.strip().lower()
+    # Exact match first
+    if ct in DESIGN_FORMAT_MAP:
+        return DESIGN_FORMAT_MAP[ct]
+    # Partial match
+    for key, val in DESIGN_FORMAT_MAP.items():
+        if key in ct or ct in key:
+            return val
+    # Default: square Instagram post
+    return {"width": 1080, "height": 1080, "slides": 1, "canva_type": "instagram_post"}
+
+
+def generate_visual_brief(claude_client, brand, topic, hook, content_type, slides, guidelines):
+    """Generate a visual design brief using Claude based on brand guidelines."""
+    brand_info = guidelines.get(brand, {})
+    visual = brand_info.get("visual", {})
+
+    if not visual:
+        return f"Design {content_type} untuk {brand}: {topic}"
+
+    prompt = f"""Buatkan VISUAL DESIGN BRIEF singkat untuk desain Instagram {content_type}.
+
+BRAND: {brand}
+TOPIC: {topic}
+HOOK: {hook}
+JUMLAH SLIDE: {slides}
+
+BRAND VISUAL GUIDELINES:
+- Primary Color: {visual.get('primary_color', 'N/A')}
+- Secondary Color: {visual.get('secondary_color', 'N/A')}
+- Accent Color: {visual.get('accent_color', 'N/A')}
+- Background: {visual.get('background_color', 'N/A')}
+- Font Heading: {visual.get('font_heading', 'N/A')}
+- Font Body: {visual.get('font_body', 'N/A')}
+- Style: {visual.get('style', 'N/A')}
+- Mood: {visual.get('mood', 'N/A')}
+
+CAROUSEL RULES:
+{chr(10).join('- ' + r for r in visual.get('carousel_rules', []))}
+
+BRAND TONE: {brand_info.get('tone', 'N/A')}
+TARGET AUDIENCE: {brand_info.get('target', 'N/A')}
+
+Output format — untuk setiap slide, tulis:
+SLIDE [n]: [judul slide]
+- Layout: [deskripsi layout]
+- Text: [teks utama yang tampil]
+- Visual: [elemen visual, warna, icon]
+
+Buat ringkas dan actionable untuk designer."""
+
+    msg = claude_client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return msg.content[0].text.strip()
+
+
+def update_sheet_canva_link(content_id, canva_link):
+    """Update kolom Canva Link di Google Sheet untuk content_id tertentu."""
+    try:
+        headers, data_rows, _ = read_sheet_info()
+        col_map = get_header_index(headers)
+        canva_col = col_map.get("canva_link")
+        if canva_col is None:
+            logger.warning("[SHEET] No canva_link column found")
+            return False
+
+        cid_col = col_map.get("content_id", 1)
+        for row_idx, row in enumerate(data_rows):
+            if len(row) > cid_col and row[cid_col].strip() == content_id:
+                cell = f"'{SHEET_NAME}'!{col_to_letter(canva_col)}{row_idx + 3}"
+                service = get_sheets_service()
+                service.spreadsheets().values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=cell,
+                    valueInputOption="RAW",
+                    body={"values": [[canva_link]]},
+                ).execute()
+                logger.info(f"[SHEET] Canva Link updated: {cell} = {canva_link}")
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"[SHEET] Failed to update canva link: {e}")
+        return False
+
+
+async def visual_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/visual <content_id> — Generate visual design + Canva link for content.
+    /visual batch — Process all eligible content without Canva links."""
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "Cara pakai:\n"
+            "  /visual SB-027 — Generate design untuk 1 konten\n"
+            "  /visual batch — Generate semua konten tanpa Canva link\n\n"
+            "Bot akan:\n"
+            "1. Buat Canva design dengan ukuran sesuai format\n"
+            "2. Generate visual brief dari brand guidelines\n"
+            "3. Update Canva Link di Sheet\n"
+            "4. Kirim brief ke Firman untuk di-design"
+        )
+        return
+
+    if not CANVA_ACCESS_TOKEN:
+        await update.message.reply_text(
+            "CANVA_ACCESS_TOKEN belum di-set.\n"
+            "Set env var di Railway: CANVA_ACCESS_TOKEN=..."
+        )
+        return
+
+    guidelines = load_brand_guidelines()
+
+    # Read sheet
+    headers, data_rows, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+
+    def col(row, name):
+        idx = col_map.get(name)
+        if idx is not None and idx < len(row):
+            return row[idx].strip()
+        return ""
+
+    target = args[0].strip().upper()
+
+    if target == "BATCH":
+        # Batch mode: find all eligible rows without Canva link
+        eligible = []
+        for row_idx, row in enumerate(data_rows):
+            cid = col(row, "content_id")
+            canva = col(row, "canva_link")
+            ctype = col(row, "content_type").lower()
+            vs = col(row, "visual_status").lower()
+
+            if not cid or canva or "skip" in vs:
+                continue
+
+            # Only Carousel, Feed, Single Post
+            if any(k in ctype for k in ("carousel", "feed", "single", "post")):
+                eligible.append((row_idx, row))
+
+        if not eligible:
+            await update.message.reply_text("Tidak ada konten yang butuh Canva design.")
+            return
+
+        await update.message.reply_text(
+            f"Memproses {len(eligible)} konten...\n"
+            f"Estimasi: ~{len(eligible) * 4} detik (rate limit Canva API)"
+        )
+
+        created = 0
+        errors = 0
+        claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        for row_idx, row in eligible:
+            cid = col(row, "content_id")
+            brand = col(row, "brand")
+            topic = col(row, "topik")
+            hook = col(row, "hook")
+            ctype = col(row, "content_type")
+            fmt = get_design_format(ctype)
+
+            title = f"{brand} — {cid} — {topic}"[:255]
+
+            try:
+                # Create Canva design with proper dimensions
+                design_id, edit_url, view_url = canva_create_design(
+                    title, width=fmt["width"], height=fmt["height"]
+                )
+
+                # Update Sheet
+                update_sheet_canva_link(cid, edit_url)
+                update_sheet_visual_status(cid, "Designed — Pending Review")
+
+                created += 1
+                logger.info(f"[VISUAL] Created design for {cid}: {design_id}")
+
+                # Rate limit: Canva API ~20 req/min
+                import time
+                time.sleep(3)
+
+            except Exception as e:
+                errors += 1
+                logger.error(f"[VISUAL] Error creating design for {cid}: {e}")
+
+        # Generate visual brief for first 5 items (as example)
+        brief_msg = ""
+        sample = eligible[:3]
+        for _, row in sample:
+            cid = col(row, "content_id")
+            brand = col(row, "brand")
+            topic = col(row, "topik")
+            hook = col(row, "hook")
+            ctype = col(row, "content_type")
+            fmt = get_design_format(ctype)
+
+            try:
+                brief = generate_visual_brief(
+                    claude_client, brand, topic, hook, ctype, fmt["slides"], guidelines
+                )
+                brief_msg += f"\n{'='*40}\n{cid} | {brand} | {ctype}\n{'='*40}\n{brief}\n"
+            except Exception:
+                pass
+
+        result_msg = (
+            f"VISUAL BATCH COMPLETE\n\n"
+            f"Created: {created}\n"
+            f"Errors: {errors}\n"
+            f"Total: {len(eligible)}\n\n"
+            f"Semua Canva link sudah ditulis ke Sheet.\n"
+            f"Firman bisa buka link di kolom 'Canva Link' untuk mulai design."
+        )
+        await update.message.reply_text(result_msg)
+
+        if brief_msg:
+            brief_header = "SAMPLE VISUAL BRIEFS (3 konten pertama):\n"
+            full_brief = brief_header + brief_msg
+            for i in range(0, len(full_brief), 4096):
+                await update.message.reply_text(full_brief[i:i+4096])
+
+        # Notify team group
+        group_id = TEAM_GROUP_ID or context.bot_data.get("team_group_id", "")
+        if group_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(group_id),
+                    text=(
+                        f"VISUAL UPDATE\n\n"
+                        f"{created} desain Canva baru dibuat!\n"
+                        f"Firman, cek kolom Canva Link di tracker untuk mulai design.\n"
+                        f"Format sudah disesuaikan per tipe konten."
+                    ),
+                )
+            except Exception:
+                pass
+
+    else:
+        # Single content mode
+        content_id = target
+        found = None
+        for row_idx, row in enumerate(data_rows):
+            if col(row, "content_id").upper() == content_id:
+                found = (row_idx, row)
+                break
+
+        if not found:
+            await update.message.reply_text(f"Content ID '{content_id}' tidak ditemukan di Sheet.")
+            return
+
+        row_idx, row = found
+        brand = col(row, "brand")
+        topic = col(row, "topik")
+        hook = col(row, "hook")
+        ctype = col(row, "content_type")
+        existing_canva = col(row, "canva_link")
+        fmt = get_design_format(ctype)
+
+        await update.message.reply_text(
+            f"Generating visual untuk {content_id}...\n"
+            f"Brand: {brand}\n"
+            f"Type: {ctype} ({fmt['width']}x{fmt['height']}, {fmt['slides']} slides)\n"
+            f"Topic: {topic}"
+        )
+
+        try:
+            # Create Canva design
+            title = f"{brand} — {content_id} — {topic}"[:255]
+            design_id, edit_url, view_url = canva_create_design(
+                title, width=fmt["width"], height=fmt["height"]
+            )
+
+            # Update Sheet
+            update_sheet_canva_link(content_id, edit_url)
+            update_sheet_visual_status(content_id, "Designed — Pending Review")
+
+            # Generate visual brief
+            claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            brief = generate_visual_brief(
+                claude_client, brand, topic, hook, ctype, fmt["slides"], guidelines
+            )
+
+            result_msg = (
+                f"DESIGN CREATED — {content_id}\n\n"
+                f"Canva Edit: {edit_url}\n"
+                f"Size: {fmt['width']}x{fmt['height']}\n"
+                f"Slides: {fmt['slides']}\n\n"
+                f"VISUAL BRIEF:\n"
+                f"{'─'*35}\n"
+                f"{brief}\n"
+                f"{'─'*35}\n\n"
+                f"Sheet updated: Canva Link + Visual Status"
+            )
+
+            for i in range(0, len(result_msg), 4096):
+                await update.message.reply_text(result_msg[i:i+4096])
+
+            # Notify team
+            group_id = TEAM_GROUP_ID or context.bot_data.get("team_group_id", "")
+            if group_id:
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(group_id),
+                        text=(
+                            f"VISUAL: {content_id} ({brand})\n"
+                            f"{topic}\n\n"
+                            f"Canva: {edit_url}\n"
+                            f"Format: {ctype} ({fmt['width']}x{fmt['height']})\n\n"
+                            f"Firman, design sudah siap untuk di-edit!"
+                        ),
+                    )
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"[VISUAL] Error: {e}", exc_info=True)
+            await update.message.reply_text(f"Error creating design: {str(e)}")
+
+
+# ============================================================
+# CLIENT REVIEW DOC — Aggregate scripts per brand
+# ============================================================
+
+CLIENT_REVIEW_REGISTRY_FILE = os.path.join(SCRIPT_DIR, "client_review_docs.json")
+
+
+def load_client_review_registry():
+    """Load brand → doc_id mapping."""
+    try:
+        if os.path.exists(CLIENT_REVIEW_REGISTRY_FILE):
+            with open(CLIENT_REVIEW_REGISTRY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"[CLIENT_REVIEW] Failed to load registry: {e}")
+    return {}
+
+
+def save_client_review_registry(registry):
+    """Save brand → doc_id mapping."""
+    try:
+        with open(CLIENT_REVIEW_REGISTRY_FILE, "w", encoding="utf-8") as f:
+            json.dump(registry, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"[CLIENT_REVIEW] Failed to save registry: {e}")
+
+
+def fetch_doc_text(docs_service, doc_url):
+    """Fetch plain text content from a Google Doc URL."""
+    try:
+        # Extract doc ID from URL
+        match = re.search(r"/document/d/([a-zA-Z0-9_-]+)", doc_url)
+        if not match:
+            return ""
+        doc_id = match.group(1)
+
+        doc = docs_service.documents().get(documentId=doc_id).execute()
+        text = ""
+        for element in doc.get("body", {}).get("content", []):
+            if "paragraph" in element:
+                for elem in element["paragraph"].get("elements", []):
+                    if "textRun" in elem:
+                        text += elem["textRun"]["content"]
+        return text
+    except Exception as e:
+        logger.warning(f"[CLIENT_REVIEW] Failed to fetch doc {doc_url}: {e}")
+        return ""
+
+
+def build_or_update_client_review_doc(brand, scripts_data):
+    """Create or update a single Google Doc for client review.
+    scripts_data: list of dicts with content_id, topic, content_type, hook, script_text
+    Returns doc URL.
+    """
+    creds = get_google_credentials()
+    docs_service = build("docs", "v1", credentials=creds)
+    drive_service = build("drive", "v3", credentials=creds)
+
+    registry = load_client_review_registry()
+    doc_id = registry.get(brand)
+
+    # Check if existing doc is still accessible
+    if doc_id:
+        try:
+            docs_service.documents().get(documentId=doc_id).execute()
+        except Exception:
+            doc_id = None
+
+    if not doc_id:
+        # Create new doc
+        doc_title = f"Client Review — {brand}"
+        doc = docs_service.documents().create(body={"title": doc_title}).execute()
+        doc_id = doc["documentId"]
+        registry[brand] = doc_id
+        save_client_review_registry(registry)
+        logger.info(f"[CLIENT_REVIEW] Created new doc for {brand}: {doc_id}")
+    else:
+        # Clear existing content
+        try:
+            doc = docs_service.documents().get(documentId=doc_id).execute()
+            end_index = doc["body"]["content"][-1]["endIndex"] - 1
+            if end_index > 1:
+                docs_service.documents().batchUpdate(
+                    documentId=doc_id,
+                    body={"requests": [{
+                        "deleteContentRange": {
+                            "range": {"startIndex": 1, "endIndex": end_index}
+                        }
+                    }]},
+                ).execute()
+        except Exception as e:
+            logger.warning(f"[CLIENT_REVIEW] Failed to clear doc: {e}")
+
+    # Build full content
+    sep_thick = "═" * 50
+    sep_thin = "─" * 50
+    today = datetime.now().strftime("%d %b %Y")
+
+    full_text = (
+        f"CLIENT REVIEW DOCUMENT\n"
+        f"Brand: {brand}\n"
+        f"Last Updated: {today}\n"
+        f"Total Scripts: {len(scripts_data)}\n\n"
+        f"Cara Review:\n"
+        f"1. Baca setiap script di section bawah\n"
+        f"2. Highlight teks yang ingin dikomentari → klik 'Add comment'\n"
+        f"3. Tulis feedback / approval di comment\n"
+        f"4. Kami akan revisi berdasarkan feedback Anda\n\n"
+        f"{sep_thick}\n\n"
+    )
+
+    for i, s in enumerate(scripts_data, 1):
+        full_text += (
+            f"#{i} — [{s['content_id']}] {s['topic']}\n"
+            f"{sep_thin}\n"
+            f"Tipe: {s['content_type']}\n"
+            f"Hook: {s['hook']}\n\n"
+            f"{s['script_text'].strip()}\n\n"
+            f"{sep_thick}\n\n"
+        )
+
+    # Insert text
+    docs_service.documents().batchUpdate(
+        documentId=doc_id,
+        body={"requests": [{
+            "insertText": {"location": {"index": 1}, "text": full_text}
+        }]},
+    ).execute()
+
+    # Apply bold formatting to headers
+    try:
+        doc_fresh = docs_service.documents().get(documentId=doc_id).execute()
+        bold_requests = []
+        for element in doc_fresh.get("body", {}).get("content", []):
+            if "paragraph" not in element:
+                continue
+            for elem in element["paragraph"].get("elements", []):
+                if "textRun" not in elem:
+                    continue
+                text = elem["textRun"]["content"].strip()
+                start = elem.get("startIndex", 0)
+                end = elem.get("endIndex", 0)
+                should_bold = (
+                    text.startswith("CLIENT REVIEW")
+                    or text.startswith("Brand:")
+                    or text.startswith("Last Updated:")
+                    or text.startswith("Total Scripts:")
+                    or text.startswith("Cara Review:")
+                    or text.startswith("#")
+                    or text.startswith("Tipe:")
+                    or text.startswith("Hook:")
+                    or text.startswith("SLIDE")
+                )
+                if should_bold and start < end:
+                    bold_requests.append({
+                        "updateTextStyle": {
+                            "range": {"startIndex": start, "endIndex": end},
+                            "textStyle": {"bold": True},
+                            "fields": "bold",
+                        }
+                    })
+        if bold_requests:
+            docs_service.documents().batchUpdate(
+                documentId=doc_id,
+                body={"requests": bold_requests},
+            ).execute()
+    except Exception as e:
+        logger.warning(f"[CLIENT_REVIEW] Bold formatting skipped: {e}")
+
+    # Set permission: anyone with link = COMMENTER
+    try:
+        # Remove existing anyone permissions first to avoid duplicates
+        perms = drive_service.permissions().list(fileId=doc_id).execute()
+        for p in perms.get("permissions", []):
+            if p.get("type") == "anyone":
+                try:
+                    drive_service.permissions().delete(
+                        fileId=doc_id, permissionId=p["id"]
+                    ).execute()
+                except Exception:
+                    pass
+
+        drive_service.permissions().create(
+            fileId=doc_id,
+            body={"type": "anyone", "role": "commenter"},
+        ).execute()
+    except Exception as e:
+        logger.warning(f"[CLIENT_REVIEW] Permission update failed: {e}")
+
+    return f"https://docs.google.com/document/d/{doc_id}/edit?usp=sharing"
+
+
+async def client_review_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/client_review <brand> — Generate/update client review doc for a brand."""
+    args = context.args
+    if not args:
+        guidelines = load_brand_guidelines()
+        brand_list = "\n".join(f"  - {b}" for b in guidelines.keys())
+        await update.message.reply_text(
+            "Cara pakai:\n"
+            "  /client_review <brand>\n\n"
+            "Contoh:\n"
+            "  /client_review Sabitah\n"
+            "  /client_review County\n\n"
+            "Brand tersedia:\n" + brand_list + "\n\n"
+            "Bot akan:\n"
+            "1. Scan semua script status 'Ready for Client Review'\n"
+            "2. Buat/update 1 Google Doc khusus brand itu\n"
+            "3. Set permission: anyone with link = commenter\n"
+            "4. Return URL untuk dishare ke client"
+        )
+        return
+
+    brand_input = " ".join(args).strip()
+
+    # Find brand match (case-insensitive)
+    guidelines = load_brand_guidelines()
+    brand = None
+    for b in guidelines.keys():
+        if b.lower() == brand_input.lower():
+            brand = b
+            break
+    if not brand:
+        await update.message.reply_text(
+            f"Brand '{brand_input}' tidak ditemukan.\n"
+            f"Brand tersedia: {', '.join(guidelines.keys())}"
+        )
+        return
+
+    await update.message.reply_text(f"Memproses script untuk {brand}...")
+
+    # Read sheet
+    headers, data_rows, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+
+    def col(row, name):
+        idx = col_map.get(name)
+        if idx is not None and idx < len(row):
+            return row[idx].strip()
+        return ""
+
+    # Find all scripts ready for client review
+    matching = []
+    for row in data_rows:
+        if col(row, "brand").lower() != brand.lower():
+            continue
+        ss = col(row, "script_status").lower()
+        if "ready for client review" not in ss and "approved by client" not in ss:
+            continue
+        matching.append(row)
+
+    if not matching:
+        await update.message.reply_text(
+            f"Tidak ada script {brand} dengan status 'Ready for Client Review'.\n\n"
+            f"Cara mark script untuk client review:\n"
+            f"1. Buka Master Tracker di Google Sheet\n"
+            f"2. Filter brand = {brand}\n"
+            f"3. Ubah Script Status ke 'Ready for Client Review'\n"
+            f"4. Run /client_review {brand} lagi"
+        )
+        return
+
+    # Fetch script content from each Google Doc
+    creds = get_google_credentials()
+    docs_service = build("docs", "v1", credentials=creds)
+
+    scripts_data = []
+    fetch_failed = 0
+    for row in matching:
+        cid = col(row, "content_id")
+        topic = col(row, "topik")
+        ctype = col(row, "content_type")
+        hook = col(row, "hook")
+        script_link = col(row, "script_link")
+
+        script_text = ""
+        if script_link:
+            script_text = fetch_doc_text(docs_service, script_link)
+
+        if not script_text:
+            fetch_failed += 1
+            script_text = f"[Script Doc tidak ditemukan: {script_link or 'no link'}]"
+
+        scripts_data.append({
+            "content_id": cid,
+            "topic": topic,
+            "content_type": ctype,
+            "hook": hook,
+            "script_text": script_text,
+        })
+
+    # Build/update the doc
+    try:
+        doc_url = build_or_update_client_review_doc(brand, scripts_data)
+    except Exception as e:
+        logger.error(f"[CLIENT_REVIEW] Failed: {e}", exc_info=True)
+        await update.message.reply_text(f"Error: {str(e)}")
+        return
+
+    msg = (
+        f"CLIENT REVIEW DOC — {brand}\n\n"
+        f"Total scripts: {len(scripts_data)}\n"
+        f"Fetch failed: {fetch_failed}\n\n"
+        f"Link untuk client (comment access):\n"
+        f"{doc_url}\n\n"
+        f"Copy link di atas dan share ke client.\n"
+        f"Client bisa langsung baca semua script dan kasih comment di bagian mana saja."
+    )
+    await update.message.reply_text(msg, disable_web_page_preview=True)
 
 
 # ============================================================
@@ -3771,6 +4460,8 @@ def main():
     print("    - Document: auto-detect chapters, 1 bab = 1 konten")
     print("    - Auto-save ke Google Sheet")
     print("    - Team notifications ke Telegram Group")
+    print("    - /visual: Canva design + visual brief per konten")
+    print("    - /client_review: 1 doc per brand untuk review client")
     print("    - Daily report jam 08:00 WIB")
     print("    - Deadline reminder jam 08:30 WIB")
     print("    - PIC task reminder jam 09:00 WIB")
@@ -3790,6 +4481,8 @@ def main():
     app.add_handler(CommandHandler("caption", caption_command))
     app.add_handler(CommandHandler("calendar", calendar_command))
     app.add_handler(CommandHandler("repurpose", repurpose_command))
+    app.add_handler(CommandHandler("visual", visual_command))
+    app.add_handler(CommandHandler("client_review", client_review_command))
     app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
