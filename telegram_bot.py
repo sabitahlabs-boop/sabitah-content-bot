@@ -4495,6 +4495,28 @@ def main():
     wib = timezone(timedelta(hours=7))
     report_time = dt_time(hour=8, minute=0, second=0, tzinfo=wib)
 
+    # Auto-register bot commands ke Telegram (muncul di autocomplete menu)
+    from telegram import BotCommand
+
+    async def setup_commands(application):
+        commands = [
+            BotCommand("start", "Mulai pakai bot / lihat help"),
+            BotCommand("cancel", "Batalkan proses yang sedang berjalan"),
+            BotCommand("report", "Daily report semua brand"),
+            BotCommand("visual", "Generate Canva design (e.g., /visual SB-027)"),
+            BotCommand("client_review", "Buat doc review per brand (e.g., /client_review Sabitah)"),
+            BotCommand("caption", "Generate caption + hashtag"),
+            BotCommand("calendar", "Buat content calendar 1 bulan"),
+            BotCommand("repurpose", "Repurpose script ke format baru"),
+            BotCommand("team", "Setup team group notification"),
+            BotCommand("register", "Register PIC role"),
+            BotCommand("chatid", "Tampilkan chat ID"),
+        ]
+        await application.bot.set_my_commands(commands)
+        logger.info(f"[BOT] Registered {len(commands)} commands to Telegram")
+
+    app.post_init = setup_commands
+
     if app.job_queue:
         app.job_queue.run_daily(send_daily_report, time=report_time, name="daily_report")
         logger.info(f"[REPORT] Daily report scheduled at {report_time} WIB")
