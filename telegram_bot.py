@@ -2141,6 +2141,91 @@ async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 
+async def send_dimas_daily_worklist(context: ContextTypes.DEFAULT_TYPE):
+    """Daily job: kirim link My Tasks sheet + summary ke Dimas tiap pagi."""
+    try:
+        # Refresh sheet first
+        try:
+            sync_my_tasks_completions()
+        except Exception as e:
+            logger.warning(f"[WORKLIST] Pre-sync failed: {e}")
+
+        # Get sheet ID for direct link
+        sheet_id = get_my_tasks_sheet_id()
+        if sheet_id is None:
+            logger.error("[WORKLIST] My Tasks sheet not found")
+            return
+
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit#gid={sheet_id}"
+
+        # Read current state
+        service = get_sheets_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{MY_TASKS_SHEET_NAME}'",
+        ).execute()
+        rows = result.get("values", [])
+
+        if len(rows) < 2:
+            msg = (
+                f"GOOD MORNING DIMAS!\n\n"
+                f"My Tasks dashboard kosong — semua sudah di-approve. Mantap!\n\n"
+                f"Link dashboard: {sheet_url}"
+            )
+        else:
+            data_rows = rows[1:]
+            from collections import Counter
+            urgency_counts = Counter(r[1] if len(r) > 1 else "" for r in data_rows)
+
+            # Top 5 most urgent
+            top_5 = data_rows[:5]
+            top_lines = []
+            for r in top_5:
+                cid = r[5] if len(r) > 5 else ""
+                brand = r[6] if len(r) > 6 else ""
+                ctype = r[7] if len(r) > 7 else ""
+                topic = (r[8] if len(r) > 8 else "")[:55]
+                urgency = r[1] if len(r) > 1 else ""
+                top_lines.append(f"  [{urgency}] {cid} | {brand} | {ctype}\n    {topic}")
+
+            today_str = datetime.now().strftime("%A, %d %B %Y")
+            msg = (
+                f"GOOD MORNING DIMAS!\n"
+                f"{today_str}\n\n"
+                f"WORKLIST HARI INI:\n"
+                f"  Total pending: {len(data_rows)} script\n"
+                f"  OVERDUE: {urgency_counts.get('OVERDUE', 0)}\n"
+                f"  TODAY: {urgency_counts.get('TODAY', 0)}\n"
+                f"  URGENT (3 hari): {urgency_counts.get('URGENT', 0)}\n"
+                f"  SOON (7 hari): {urgency_counts.get('SOON', 0)}\n\n"
+                f"TOP 5 PALING URGENT:\n"
+                + "\n".join(top_lines) + "\n\n"
+                f"Buka dashboard untuk review semua:\n"
+                f"{sheet_url}\n\n"
+                f"Cara pakai:\n"
+                f"1. Buka link di atas\n"
+                f"2. Review script urgent dulu (klik Script Link)\n"
+                f"3. Centang checkbox 'Done?' kalau approve\n"
+                f"4. Otomatis masuk ke antrian Asdi/Dedi/Firman\n\n"
+                f"Semangat Dimas!"
+            )
+
+        # Send to Dimas
+        dimas_chat = PIC_REGISTRY.get("Dimas", {}).get("chat_id")
+        if dimas_chat:
+            await context.bot.send_message(
+                chat_id=dimas_chat,
+                text=msg,
+                disable_web_page_preview=True,
+            )
+            logger.info(f"[WORKLIST] Daily worklist sent to Dimas")
+        else:
+            logger.warning("[WORKLIST] Dimas chat_id not registered")
+
+    except Exception as e:
+        logger.error(f"[WORKLIST] Failed to send daily worklist: {e}", exc_info=True)
+
+
 async def auto_sync_my_tasks(context: ContextTypes.DEFAULT_TYPE):
     """Background job: auto-sync My Tasks every X minutes."""
     try:
@@ -4820,6 +4905,11 @@ def main():
         # Auto-sync My Tasks every 2 minutes
         app.job_queue.run_repeating(auto_sync_my_tasks, interval=120, first=60, name="auto_sync_my_tasks")
         logger.info(f"[MY_TASKS] Auto-sync scheduled every 2 minutes")
+
+        # Daily worklist ke Dimas jam 07:30 WIB
+        worklist_time = dt_time(hour=7, minute=30, second=0, tzinfo=wib)
+        app.job_queue.run_daily(send_dimas_daily_worklist, time=worklist_time, name="dimas_worklist")
+        logger.info(f"[WORKLIST] Daily worklist ke Dimas scheduled at {worklist_time} WIB")
     else:
         logger.warning("[REPORT] JobQueue not available, daily report disabled")
 
