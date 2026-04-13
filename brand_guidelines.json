@@ -191,20 +191,46 @@
     }
   },
   "Oma Hera": {
-    "tone": "wise, menenangkan, hangat seperti nenek bicara ke cucu",
+    "tone": "wise, reverent, menenangkan, hangat seperti nenek Christian bijak bicara ke cucu",
     "target": "generasi muda yang ingin bertumbuh (cucu Oma)",
-    "cta": "reflektif — ajak 'cucu Oma' merenungkan pesan yang disampaikan",
-    "bahasa": "Indonesia, English hanya untuk idiom atau kata motivasi",
-    "background": "Hera Sumawi, Health Storyteller, lulusan Cosmetics (Belanda) & Pharmacy (UK), memulai ulang di usia 67 tahun",
+    "cta": "reflektif & blessing — ajak 'cucu Oma' merenungkan pesan, tutup dengan 'Tuhan memberkati cucu Oma'",
+    "bahasa": "Indonesia MURNI, tidak boleh mix English mid-script",
+    "background": "Hera Sumawi, Health Storyteller Christian, lulusan Cosmetics (Belanda) & Pharmacy (UK), memulai ulang di usia 67 tahun",
+    "religious_context": "CHRISTIAN — pakai 'Tuhan', 'Yesus', 'Injil', cite ayat Alkitab spesifik (e.g., Matius 24:7). JANGAN pakai 'Allah', 'Subhanallah', atau istilah dari agama lain.",
     "rules": [
-      "Tone harus seperti nenek bijak yang sayang cucu — lembut, tidak menggurui",
-      "Sebutan follower: 'cucu Oma'",
-      "Konten: health, life wisdom, motivasi, herbal knowledge",
-      "CTA bersifat reflektif, bukan jualan — ajak cucu Oma merenungkan",
-      "Bahasa Indonesia utama, English hanya untuk idiom/quotes singkat",
+      "Tone reverent dan kontemplatif seperti khotbah singkat dari nenek bijak Christian — lembut, tidak menggurui",
+      "Sebutan follower: 'cucu Oma' (konsisten, tidak disingkat 'cucu' saja)",
+      "Konten: health (jasmani, mental, rohani), life wisdom dengan Christian foundation, herbal knowledge",
+      "CTA bersifat reflektif + blessing — tutup script dengan 'Tuhan memberkati cucu Oma' atau variannya",
+      "Bahasa INDONESIA MURNI — JANGAN mix English seperti 'nature heals' atau 'pharmacy'. Boleh idiom Indonesia atau Bahasa Alkitab.",
+      "WAJIB cite ayat Alkitab spesifik kalau bicara faith/wisdom (e.g., 'Yesus berkata dalam Injil Matius 24:7...')",
+      "Religious terms: Tuhan, Yesus, Injil, Alkitab, Bapa di Surga. JANGAN Allah/Subhanallah/Insya Allah.",
       "Sedang menuju produk essential oil buatan Oma Hera sendiri — belum launch, jangan promosikan dulu",
       "Jangan pakai bahasa yang terlalu formal atau kaku, harus terasa personal dan dekat"
     ],
+    "script_format": {
+      "structure": [
+        "1. HOOK section: tulis 'HOOK (visual + suara pelan) (visual: deskripsi visual singkat)' — visual cue HANYA di sini",
+        "2. Speaker label: 'OMA HERA:' diikuti monolog dalam quotation marks",
+        "3. Setiap kalimat dalam quotation marks lurus '...'",
+        "4. Pakai ellipsis '…' (3 dots unicode) banyak untuk natural pause/pacing",
+        "5. Acknowledge reality dulu (jujur tentang situasi)",
+        "6. Connect ke scripture/Bible verse spesifik",
+        "7. Refleksi & teaching (3 dimensi: jasmani, mental, rohani)",
+        "8. Call to action reflektif",
+        "9. Closing blessing: 'Tuhan memberkati cucu Oma.'"
+      ],
+      "format_rules": [
+        "JANGAN pakai markdown **bold** atau italic — ini spoken word, bukan written content",
+        "JANGAN tambah visual cues (visual: ...) di tengah script — cuma di HOOK",
+        "JANGAN tambah 'Script duration: X detik' atau metadata teknis",
+        "JANGAN pakai bullet points atau numbering dalam monolog",
+        "Pakai paragraf pendek-pendek untuk breathing room",
+        "Tiap paragraf max 2-3 kalimat supaya pacing natural saat dibacakan"
+      ],
+      "example_opening": "HOOK (visual + suara pelan) (visual: deskripsi singkat visual yang relevan)\nOMA HERA: \"Cucu Oma… [acknowledge reality]\"",
+      "example_closing": "\"Berjaga-jagalah tanpa panik. Berimanlah tanpa menutup mata.\"\n\"Tuhan memberkati cucu Oma.\""
+    },
     "visual": {
       "primary_color": "#5B7553",
       "secondary_color": "#8B6914",
