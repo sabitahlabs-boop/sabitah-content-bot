@@ -1881,6 +1881,290 @@ async def visual_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================================
+# MY TASKS — Dimas approval queue with auto-sync
+# ============================================================
+
+MY_TASKS_SHEET_NAME = "My Tasks - Dimas"
+PRIORITY_RANK_MAP = {"high": 0, "medium": 1, "low": 2, "": 3}
+
+
+def _parse_planned_date(date_str):
+    """Parse various date formats from the sheet. Return datetime or None."""
+    if not date_str:
+        return None
+    s = date_str.strip()
+    s = re.sub(r"(\b[A-Z][a-z]{2})\s+\1", r"\1", s)
+    for fmt in ["%d %b %Y", "%d %b", "%b %d, %Y", "%b %d", "%Y-%m-%d", "%d/%m/%Y"]:
+        try:
+            d = datetime.strptime(s, fmt)
+            if d.year == 1900:
+                d = d.replace(year=2026)
+            return d
+        except ValueError:
+            continue
+    return None
+
+
+def get_my_tasks_sheet_id():
+    """Get sheetId of 'My Tasks - Dimas' tab. Return None if not exists."""
+    try:
+        service = get_sheets_service()
+        meta = service.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
+        for s in meta["sheets"]:
+            if s["properties"]["title"] == MY_TASKS_SHEET_NAME:
+                return s["properties"]["sheetId"]
+    except Exception as e:
+        logger.error(f"[MY_TASKS] Failed to get sheet id: {e}")
+    return None
+
+
+def rebuild_my_tasks_sheet():
+    """Rebuild the My Tasks sheet from current Master Tracker state.
+    Returns dict with stats."""
+    headers, data, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+
+    def col(row, name):
+        idx = col_map.get(name)
+        if idx is not None and idx < len(row):
+            return row[idx].strip()
+        return ""
+
+    today = datetime.now()
+
+    pending = []
+    for row in data:
+        if col(row, "script_status").lower() != "done":
+            continue
+        date_obj = _parse_planned_date(col(row, "date"))
+        days_until = (date_obj - today).days if date_obj else 999
+        pending.append({
+            "cid": col(row, "content_id"),
+            "brand": col(row, "brand"),
+            "type": col(row, "content_type"),
+            "topic": col(row, "topik"),
+            "hook": col(row, "hook"),
+            "date": col(row, "date"),
+            "days_until": days_until,
+            "priority": col(row, "priority") or "Medium",
+            "script_link": col(row, "script_link"),
+        })
+
+    pending.sort(key=lambda x: (x["days_until"], PRIORITY_RANK_MAP.get(x["priority"].lower(), 3)))
+
+    service = get_sheets_service()
+    sheet_id = get_my_tasks_sheet_id()
+    if sheet_id is None:
+        return {"error": f"Sheet '{MY_TASKS_SHEET_NAME}' tidak ditemukan. Run setup_my_tasks_sheet.py dulu."}
+
+    # Clear existing data
+    service.spreadsheets().values().clear(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"'{MY_TASKS_SHEET_NAME}'",
+    ).execute()
+
+    # Build rows
+    sheet_headers = [
+        "Done?", "Urgency", "Days Until", "Date", "Priority",
+        "Content ID", "Brand", "Type", "Topic", "Hook", "Script Link"
+    ]
+    rows = [sheet_headers]
+    overdue = today_count = urgent = 0
+    for p in pending:
+        if p["days_until"] < 0:
+            label = "OVERDUE"
+            overdue += 1
+        elif p["days_until"] == 0:
+            label = "TODAY"
+            today_count += 1
+        elif p["days_until"] <= 3:
+            label = "URGENT"
+            urgent += 1
+        elif p["days_until"] <= 7:
+            label = "SOON"
+        else:
+            label = "LATER"
+
+        rows.append([
+            False,
+            label,
+            p["days_until"] if p["days_until"] != 999 else "",
+            p["date"],
+            p["priority"],
+            p["cid"],
+            p["brand"],
+            p["type"],
+            p["topic"],
+            p["hook"][:80],
+            p["script_link"],
+        ])
+
+    service.spreadsheets().values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"'{MY_TASKS_SHEET_NAME}'!A1",
+        valueInputOption="USER_ENTERED",
+        body={"values": rows},
+    ).execute()
+
+    # Re-add checkbox validation (only for the data rows)
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=SPREADSHEET_ID,
+        body={"requests": [{
+            "setDataValidation": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 1,
+                    "endRowIndex": len(rows) + 50,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 1,
+                },
+                "rule": {
+                    "condition": {"type": "BOOLEAN"},
+                    "showCustomUi": True,
+                    "strict": True,
+                },
+            }
+        }]},
+    ).execute()
+
+    return {
+        "total": len(pending),
+        "overdue": overdue,
+        "today": today_count,
+        "urgent": urgent,
+    }
+
+
+def sync_my_tasks_completions():
+    """Read My Tasks sheet, find rows with Done?=TRUE, update Master Tracker
+    Script Status to 'Ready for Production', then rebuild the sheet.
+    Returns dict with counts."""
+    service = get_sheets_service()
+
+    # Read My Tasks sheet
+    try:
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{MY_TASKS_SHEET_NAME}'",
+        ).execute()
+    except Exception as e:
+        return {"error": f"Failed to read My Tasks sheet: {e}"}
+
+    rows = result.get("values", [])
+    if len(rows) < 2:
+        return {"completed": 0, "message": "No tasks in sheet"}
+
+    # Find checked items (Done? = TRUE in column A)
+    completed_cids = []
+    for row in rows[1:]:
+        if not row:
+            continue
+        done_val = row[0] if len(row) > 0 else ""
+        if str(done_val).upper() == "TRUE":
+            cid = row[5] if len(row) > 5 else ""
+            if cid:
+                completed_cids.append(cid)
+
+    if not completed_cids:
+        return {"completed": 0}
+
+    # Update Master Tracker for each completed CID
+    headers, data, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+    ss_col = col_map.get("script_status")
+    cid_col = col_map.get("content_id", 1)
+
+    updates = []
+    updated_cids = []
+    for row_idx, row in enumerate(data):
+        if cid_col >= len(row):
+            continue
+        cid = row[cid_col].strip()
+        if cid in completed_cids:
+            actual_row = row_idx + 3
+            cell = f"'{SHEET_NAME}'!{col_to_letter(ss_col)}{actual_row}"
+            updates.append({"range": cell, "values": [["Ready for Production"]]})
+            updated_cids.append(cid)
+
+    if updates:
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=SPREADSHEET_ID,
+            body={"valueInputOption": "RAW", "data": updates},
+        ).execute()
+        logger.info(f"[MY_TASKS] Marked {len(updated_cids)} scripts as Ready for Production: {updated_cids}")
+
+    # Rebuild the sheet to remove completed items + add new Done scripts
+    rebuild_stats = rebuild_my_tasks_sheet()
+
+    return {
+        "completed": len(updated_cids),
+        "completed_cids": updated_cids,
+        "rebuild": rebuild_stats,
+    }
+
+
+async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/my_tasks — Sync completed tasks + rebuild My Tasks sheet."""
+    await update.message.reply_text("Syncing My Tasks sheet...")
+
+    try:
+        result = sync_my_tasks_completions()
+    except Exception as e:
+        logger.error(f"[MY_TASKS] Sync failed: {e}", exc_info=True)
+        await update.message.reply_text(f"Error: {str(e)}")
+        return
+
+    if "error" in result:
+        await update.message.reply_text(f"Error: {result['error']}")
+        return
+
+    completed = result.get("completed", 0)
+    rebuild = result.get("rebuild", {})
+
+    msg = (
+        f"MY TASKS SYNC COMPLETE\n\n"
+        f"Marked as Ready for Production: {completed}\n"
+    )
+    if completed > 0:
+        cids = result.get("completed_cids", [])
+        msg += f"  {', '.join(cids[:10])}{'...' if len(cids) > 10 else ''}\n"
+
+    msg += (
+        f"\nMy Tasks sheet rebuilt:\n"
+        f"  Total pending: {rebuild.get('total', 0)}\n"
+        f"  OVERDUE: {rebuild.get('overdue', 0)}\n"
+        f"  TODAY: {rebuild.get('today', 0)}\n"
+        f"  URGENT (3 days): {rebuild.get('urgent', 0)}\n\n"
+        f"Buka sheet 'My Tasks - Dimas' untuk lihat daftar.\n"
+        f"Centang checkbox kalau sudah selesai review, lalu run /my_tasks lagi."
+    )
+    await update.message.reply_text(msg)
+
+
+async def auto_sync_my_tasks(context: ContextTypes.DEFAULT_TYPE):
+    """Background job: auto-sync My Tasks every X minutes."""
+    try:
+        result = sync_my_tasks_completions()
+        if result.get("completed", 0) > 0:
+            logger.info(f"[MY_TASKS] Auto-sync completed: {result}")
+            # Notify Dimas if any items were synced
+            dimas_chat = PIC_REGISTRY.get("Dimas", {}).get("chat_id")
+            if dimas_chat:
+                cids = result.get("completed_cids", [])
+                msg = (
+                    f"AUTO-SYNC: {len(cids)} script ditandai Ready for Production\n"
+                    f"  {', '.join(cids[:10])}\n\n"
+                    f"Sudah masuk antrian Asdi/Dedi/Firman."
+                )
+                try:
+                    await context.bot.send_message(chat_id=dimas_chat, text=msg)
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.error(f"[MY_TASKS] Auto-sync error: {e}")
+
+
+# ============================================================
 # CLIENT REVIEW DOC — Aggregate scripts per brand
 # ============================================================
 
@@ -4483,6 +4767,7 @@ def main():
     app.add_handler(CommandHandler("repurpose", repurpose_command))
     app.add_handler(CommandHandler("visual", visual_command))
     app.add_handler(CommandHandler("client_review", client_review_command))
+    app.add_handler(CommandHandler("my_tasks", my_tasks_command))
     app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -4505,6 +4790,7 @@ def main():
             BotCommand("report", "Daily report semua brand"),
             BotCommand("visual", "Generate Canva design (e.g., /visual SB-027)"),
             BotCommand("client_review", "Buat doc review per brand (e.g., /client_review Sabitah)"),
+            BotCommand("my_tasks", "Sync My Tasks - Dimas approval queue"),
             BotCommand("caption", "Generate caption + hashtag"),
             BotCommand("calendar", "Buat content calendar 1 bulan"),
             BotCommand("repurpose", "Repurpose script ke format baru"),
@@ -4530,6 +4816,10 @@ def main():
         pic_time = dt_time(hour=9, minute=0, second=0, tzinfo=wib)
         app.job_queue.run_daily(send_pic_reminders, time=pic_time, name="pic_reminder")
         logger.info(f"[PIC] PIC reminder scheduled at {pic_time} WIB")
+
+        # Auto-sync My Tasks every 2 minutes
+        app.job_queue.run_repeating(auto_sync_my_tasks, interval=120, first=60, name="auto_sync_my_tasks")
+        logger.info(f"[MY_TASKS] Auto-sync scheduled every 2 minutes")
     else:
         logger.warning("[REPORT] JobQueue not available, daily report disabled")
 
