@@ -2310,11 +2310,17 @@ def build_or_update_client_review_doc(brand, scripts_data):
     registry = load_client_review_registry()
     doc_id = registry.get(brand)
 
-    # Check if existing doc is still accessible
+    # Check if existing doc is still accessible AND writable by current credentials
     if doc_id:
         try:
             docs_service.documents().get(documentId=doc_id).execute()
-        except Exception:
+            # Try a no-op batchUpdate to verify write permission
+            docs_service.documents().batchUpdate(
+                documentId=doc_id,
+                body={"requests": []},
+            ).execute()
+        except Exception as e:
+            logger.warning(f"[CLIENT_REVIEW] Existing doc {doc_id} not writable ({e}), will create new")
             doc_id = None
 
     if not doc_id:
@@ -2340,7 +2346,14 @@ def build_or_update_client_review_doc(brand, scripts_data):
                     }]},
                 ).execute()
         except Exception as e:
-            logger.warning(f"[CLIENT_REVIEW] Failed to clear doc: {e}")
+            logger.warning(f"[CLIENT_REVIEW] Failed to clear doc, will create fresh: {e}")
+            # Fallback: create new doc
+            doc_title = f"Client Review — {brand}"
+            doc = docs_service.documents().create(body={"title": doc_title}).execute()
+            doc_id = doc["documentId"]
+            registry[brand] = doc_id
+            save_client_review_registry(registry)
+            logger.info(f"[CLIENT_REVIEW] Fallback created new doc for {brand}: {doc_id}")
 
     # Build full content
     sep_thick = "═" * 50
