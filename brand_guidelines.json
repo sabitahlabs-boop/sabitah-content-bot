@@ -1,15 +1,48 @@
 {
   "Sabitah": {
-    "tone": "edukatif, direct, casual",
-    "target": "entrepreneur Indonesia",
-    "cta": "soft sell ke jasa branding Sabitah",
-    "bahasa": "Indonesia campur sedikit English",
-    "rules": [
-      "Selalu posisikan Sabitah sebagai partner branding yang ngerti bisnis",
-      "Gunakan contoh nyata dari dunia bisnis Indonesia",
-      "CTA tidak boleh hard sell, harus terasa natural",
-      "Boleh pakai istilah English untuk konsep bisnis/branding"
+    "tone": "edukatif, direct, casual, underdog humble",
+    "target": "entrepreneur Indonesia, UMKM owner",
+    "positioning": "Sabitah = underdog humble co-pilot, BUKAN big agency. 'Mungkin bukan yang paling besar… tapi…' vibe.",
+    "cta": "soft sell ke jasa branding Sabitah, signature tagline: 'Let's build something real.'",
+    "bahasa": "Indonesia campur English — pakai 'gue/lu', English untuk tagline/philosophical closer",
+    "signature_phrases": [
+      "'Masalahnya bukan X… masalahnya Y'",
+      "'Lu gak harus jalan sendirian'",
+      "'Sabitah mungkin bukan yang paling besar… tapi kita bisa jadi temen branding lu'",
+      "'Branding ❌ = ...' (provocative comparison opener)",
+      "'Let's build something real.' (English tagline CTA)"
     ],
+    "content_angles": [
+      "AI-era defense system — branding sebagai pertahanan di era AI",
+      "Underdog positioning (bukan big agency)",
+      "UMKM chaos mode / realita sibuk tapi omset belum naik",
+      "Provocative reframing ('AI bisa bikin semua, jadi keunggulan lu dimana?')",
+      "Pop culture reference OK (Dark Souls 'Nightmare Mode', dll)"
+    ],
+    "rules": [
+      "Posisikan Sabitah sebagai partner branding yang ngerti bisnis — TAPI underdog humble, bukan arrogant big agency",
+      "Gunakan contoh nyata dari dunia bisnis Indonesia",
+      "CTA SELALU soft sell — underdog admission ('mungkin bukan yang paling besar tapi...')",
+      "Boleh pakai istilah English untuk konsep bisnis/branding DAN untuk tagline premium",
+      "Pakai 'gue/lu' atau 'kamu' — avoid 'Anda' yang terlalu formal",
+      "Provocative opener untuk carousel (comparison, challenge belief)",
+      "Pop culture reference (game, movie) OK kalau relevan",
+      "Hindari topik seasonal Lebaran/Ramadan — evergreen branding topics aja"
+    ],
+    "script_format": {
+      "reel_template": "🎬 REELS SCRIPT – [CID] ([Brand])\nAngle: [one-liner angle]\n\n🎯 HOOK (0–5 detik)\nVisual: [deskripsi visual]\nSpeaker: \"[opening line yang nampar]\"\n(pause, [tone direction])\n\n🎯 STORY / RELATE (5–20 detik)\nVisual: [cut/montage description]\nSpeaker: \"[relatable scenario]\"\n\"[continuation]\"\n\n🎯 INSIGHT (20–30 detik)\nVisual: [tone shift]\nSpeaker: \"[reframe insight]\"\n\n🎯 SOFT SOLUTION (30–42 detik)\nVisual: [product/service in action]\nSpeaker: \"[soft pitch]\"\n\n🎯 CTA (42–50 detik)\nVisual: [close, personal]\nSpeaker: \"[underdog invitation]\"",
+      "carousel_template": "🎠 CAROUSEL – [CID] ([Brand])\nAngle: [one-liner]\n\nSLIDE 1 (COVER)\nJudul: [provocative headline]\nTeks: [subtitle setup tension]\nVisual: [direction]\n\nSLIDE 2-N\nJudul: [point per slide]\nTeks: [short bullets]\n👉 [key takeaway]\n\nSLIDE AKHIR (CTA)\nJudul: [question]\nTeks: [answer + soft CTA]\nCTA: Let's build something real.",
+      "format_rules": [
+        "Pakai timestamp precise untuk Reels (0-5 detik, 5-20 detik, dll)",
+        "Emoji section markers: 🎬 (reel), 🎠 (carousel), 🎯 (per section)",
+        "Ellipsis '…' untuk natural pause/breath — banyak!",
+        "Acting directions dalam kurung: (pause), (beat), (senyum dikit)",
+        "'Visual:' dan 'Speaker:' terpisah per section",
+        "'👉' arrow marker untuk key takeaway di carousel",
+        "Short sentences, line breaks mid-thought untuk rhythm",
+        "Speaker dalam quotation marks '...'"
+      ]
+    },
     "visual": {
       "primary_color": "#1B2A4A",
       "secondary_color": "#F5A623",
@@ -30,16 +63,47 @@
     }
   },
   "County": {
-    "tone": "profesional tapi friendly",
-    "target": "pemilik UMKM",
-    "cta": "coba County app",
-    "bahasa": "Indonesia formal ringan",
-    "rules": [
-      "Fokus pada solusi praktis untuk UMKM",
-      "Highlight kemudahan dan efisiensi County app",
-      "Jangan terlalu teknis, tetap approachable",
-      "CTA arahkan ke download atau coba County app"
+    "tone": "empathetic, non-judgmental, 'teman yang udah figure it out'",
+    "target": "pemilik UMKM yang struggling tracking keuangan",
+    "positioning": "County = teman yang figure it out, BUKAN corporate fintech. Very personal first-person voice.",
+    "cta": "soft offer (exclusive/limited) — 'gue buka gratis buat 10 orang', 'DM aja nanti gue kasih akses'",
+    "bahasa": "Indonesia casual — pakai 'gue/lu', BUKAN 'Anda' atau 'kamu' formal",
+    "signature_phrases": [
+      "'Bukan karena gak punya duit… tapi karena gak pernah bener-bener nge-track'",
+      "'Masalahnya bukan di duitnya. Masalahnya di kebiasaan kita yang gak sadar'",
+      "'Ini normal. Yang penting sekarang… lu tau cara reset-nya'",
+      "'Gue lagi pake sistem pencatatan simpel…' (as if user sendiri)",
+      "'Gue buka gratis buat 10 orang dulu. DM aja.'"
     ],
+    "content_formula": [
+      "1. RELATE — 'gue juga ngalamin', validate dulu",
+      "2. PROBLEM AWARENESS — 'kecil-kecil tapi numpuk'",
+      "3. REFRAME — 'bukan kerja lebih keras, tapi…'",
+      "4. NON-JUDGMENTAL INSIGHT — 'namanya juga lagi bangun habit'",
+      "5. SOFT EXCLUSIVE OFFER — 'DM aja, gue kasih aksesnya'"
+    ],
+    "rules": [
+      "Bahasa casual first-person — SELALU pakai 'gue/lu'",
+      "JANGAN terdengar corporate fintech — harus terasa seperti teman yang figure it out duluan",
+      "Validate dulu sebelum pitch ('ini normal', 'bukan karena lu malas')",
+      "Fokus AWARENESS > FEATURE — jangan list features",
+      "CTA exclusive feel — limited offer, personal DM, bukan mass download",
+      "Speaker bisa pakai County sendiri ('gue pake County biar gak nebak-nebak lagi')",
+      "Topik bebas keuangan UMKM (tracking, pembukuan, cash flow, laba rugi, dll) TAPI jangan Lebaran/Ramadan"
+    ],
+    "script_format": {
+      "reel_template": "🎬 REELS SCRIPT – [CID] (County)\n🎯 HOOK (0–5 detik)\nVisual: [close-up, muka bingung/shocked]\nSpeaker: \"[relatable pain statement]\"\n(pause, liat kamera) \"[twist/gut punch]\"\n\n🎯 RELATE (5–20 detik)\nVisual: [scroll transaksi, aktivitas harian]\nSpeaker: \"Sering banget ini gue alamin…\"\n\"dan gue yakin lu juga.\"\n\n🎯 INSIGHT (20–30 detik)\nVisual: [lebih tenang]\nSpeaker: \"Masalahnya bukan di [X]. Masalahnya di [Y].\"\n\n🎯 SOFT SOLUSI (30–40 detik)\nVisual: [input di HP, dashboard simple]\nSpeaker: \"Gue lagi pake sistem pencatatan simpel yang gue bikin sendiri…\"\n\n🎯 CTA (40–50 detik)\nVisual: [close, personal]\nSpeaker: \"Kalau lu mau coba juga… gue buka gratis buat 10 orang dulu. DM aja.\"",
+      "carousel_template": "🎠 CAROUSEL – [CID] (County)\nAngle: \"[empathy-first angle]\"\n\nSLIDE 1 (COVER)\nJudul: [pain point as question]\nTeks: Tenang… ini normal.\nYang penting sekarang: 👉 lu tau cara [action]-nya.\n\nSLIDE 2-N\nJudul: [step number]\nTeks: [short bullets with 👉 takeaway]\n\nSLIDE AKHIR (CTA)\nJudul: [motivation / jangan berhenti]\nTeks: [soft County mention]\n👉 County bantu lu mulai… dan konsisten.",
+      "format_rules": [
+        "SELALU pakai 'gue/lu' casual first-person",
+        "Timestamp precise di Reels (0-5 detik, 5-20 detik, dll)",
+        "Emoji section markers: 🎬 🎯 🎠",
+        "Ellipsis '…' untuk pacing & breathing",
+        "Validate pain dulu, baru reveal insight",
+        "Exclusive CTA (limited slot, DM pribadi, bukan mass download)",
+        "'👉' marker untuk takeaway di carousel"
+      ]
+    },
     "visual": {
       "primary_color": "#2D6A4F",
       "secondary_color": "#40916C",
@@ -60,16 +124,46 @@
     }
   },
   "LEGUS": {
-    "tone": "terpercaya, authoritative",
-    "target": "pengusaha butuh legal",
+    "tone": "terpercaya, authoritative, serius tapi accessible",
+    "target": "pengusaha UMKM/startup yang butuh legal advice",
+    "positioning": "LEGUS = ahli hukum bisnis yang bisa dipercaya, bukan birokrat. Formal tapi approachable.",
     "cta": "konsultasi gratis di LEGUS",
-    "bahasa": "Indonesia formal",
+    "bahasa": "Indonesia formal tapi tidak kaku — pakai 'Anda' atau 'kamu'",
+    "signature_phrases": [
+      "'80% pengusaha tidak tahu…' (authority stat opener)",
+      "'Ternyata, menurut [UU spesifik]…' (cite law)",
+      "'Anda berhak menolak/meminta/mendapat…'",
+      "'Jangan biarkan bisnis Anda dirugikan karena kurang pemahaman hukum'"
+    ],
+    "content_angles": [
+      "Hak hukum yang jarang diketahui pengusaha",
+      "Regulasi baru / update terbaru",
+      "Stats & data yang menakutkan (60% UMKM belum legal, dll)",
+      "Kesalahan legal fatal yang bikin bisnis rugi",
+      "Penjelasan UU/peraturan dalam bahasa sederhana"
+    ],
     "rules": [
       "Posisikan LEGUS sebagai ahli hukum bisnis yang bisa dipercaya",
-      "Gunakan data atau fakta hukum yang relevan",
+      "Gunakan data atau fakta hukum yang relevan — SELALU cite UU/peraturan spesifik",
       "Jangan pakai bahasa gaul, tetap formal tapi tidak kaku",
-      "CTA selalu arahkan ke konsultasi gratis"
+      "CTA selalu arahkan ke konsultasi gratis",
+      "Pakai stats authority opener (misal '80% pengusaha tidak tahu...')",
+      "Hindari topik seasonal Lebaran/Ramadan — evergreen legal topics"
     ],
+    "script_format": {
+      "reel_template": "🎬 REELS SCRIPT – [CID] (LEGUS)\n🎯 HOOK (0–5 detik)\nVisual: [serious, professional setting or shocking stat visual]\nSpeaker: \"[stat authority — '80% pengusaha tidak tahu…']\"\n(pause) \"…ternyata mereka berhak [X].\"\n\n🎯 CONTEXT (5–20 detik)\nVisual: [documents, legal scene]\nSpeaker: \"Menurut [UU spesifik / pasal]…\"\n\"[penjelasan hak/kewajiban]\"\n\n🎯 INSIGHT (20–30 detik)\nVisual: [businessman thinking]\nSpeaker: \"Banyak pengusaha tidak tahu hal ini…\"\n\"dan akhirnya merugi [specific risk].\"\n\n🎯 CTA (30–40 detik)\nVisual: [LEGUS logo, office setting]\nSpeaker: \"Jangan biarkan bisnis Anda rugi karena kurang pemahaman hukum.\"\n\"Konsultasi gratis dengan LEGUS sekarang juga.\"",
+      "carousel_template": "🎠 CAROUSEL – [CID] (LEGUS)\nAngle: [authority-based]\n\nSLIDE 1 (COVER)\nJudul: [stat shock — '80% Pengusaha Tidak Tahu Hal Ini! ⚖️']\nTeks: [brief setup + promise of knowledge]\n\nSLIDE 2-6\nJudul: [hak / aturan / kesalahan nomor]\nTeks: [penjelasan + cite UU spesifik]\n👉 [actionable takeaway]\n\nSLIDE 7 (CTA)\nJudul: Lindungi Bisnis Anda dengan Pengetahuan Hukum\nTeks: [soft warning + konsultasi CTA]\nCTA: Konsultasi gratis dengan LEGUS.",
+      "format_rules": [
+        "Tone formal tapi tidak kaku — pakai 'Anda' (bukan 'gue/lu')",
+        "SELALU cite UU/pasal spesifik — itu authority-nya",
+        "Stats opener untuk hook ('60% UMKM...', '80% pengusaha...')",
+        "Emoji section markers: 🎬 🎯 🎠",
+        "Timestamp precise di Reels",
+        "Ellipsis '…' untuk dramatic pacing",
+        "'👉' marker untuk carousel takeaway",
+        "CTA SELALU 'konsultasi gratis'"
+      ]
+    },
     "visual": {
       "primary_color": "#1A1A2E",
       "secondary_color": "#16213E",
@@ -91,19 +185,53 @@
     }
   },
   "Defarchy": {
-    "tone": "energik, young",
-    "target": "anak muda urban",
-    "cta": "cek koleksi Defarchy",
-    "bahasa": "Indonesia gaul",
-    "produk": "motor listrik dan sepeda listrik",
-    "rules": [
-      "Bahasa harus relatable untuk Gen Z dan millennial",
-      "Boleh pakai slang dan bahasa internet",
-      "Visual direction harus bold dan eye-catching",
-      "CTA arahkan ke koleksi atau produk Defarchy",
-      "Produk utama: motor listrik dan sepeda listrik",
-      "Highlight keunggulan EV: hemat, ramah lingkungan, cocok commuting kota"
+    "tone": "trusted advisor, direct, edukatif, 'warning friend' vibe",
+    "target": "pembeli sepeda listrik yang masih ragu/newbie",
+    "positioning": "Defarchy = ANTI-marketplace, PRO-showroom. After sales & service > cheap deals.",
+    "cta": "'Dateng, liat langsung, test, baru mutusin.' Tagline: 'Beli nyaman, service aman.'",
+    "bahasa": "Indonesia casual — 'lu', 'gue/kami', tidak gaul Gen Z tapi tidak formal",
+    "produk": "sepeda listrik (fokus utama), motor listrik",
+    "signature_phrases": [
+      "'Murah di depan… belum tentu murah di belakang'",
+      "'Dateng, liat langsung, baru mutusin'",
+      "'Beli nyaman, service aman' (tagline)",
+      "'Yakin?' (rhetorical challenge)",
+      "'Dipake 3 bulan… 6 bulan… masih aman?'",
+      "'Jangan cuma karena murah… jadi mahal di belakang'"
     ],
+    "content_angles": [
+      "Risiko beli online tanpa after sales",
+      "Total cost of ownership (jangan cuma liat harga unit)",
+      "Hidden costs — baterai, spare part, warranty, service",
+      "After sales excellence (gudang spare part, bengkel resmi, teknisi)",
+      "Silent flex hemat (visual-driven, musik upbeat, no talking)",
+      "Edukasi pemakaian (cara charge baterai, perawatan, dll)",
+      "Showroom physical experience"
+    ],
+    "rules": [
+      "Tone trusted advisor — bukan cool Gen Z, tapi teman yang PERINGATIN bahaya",
+      "ALWAYS highlight: after sales, service, showroom physical — anti-marketplace vibe",
+      "Edukasi risiko dulu, baru reveal solusi (Defarchy)",
+      "Pakai 'lu' untuk calon customer, fokus edukasi konsumen",
+      "CTA SELALU arahkan ke showroom physical / test drive — BUKAN beli online",
+      "Produk: SEPEDA LISTRIK adalah fokus utama. Motor listrik sekunder.",
+      "JANGAN jual dengan kata 'murah' — jual dengan 'aman', 'worth it', 'gak ribet'",
+      "Hindari topik seasonal Lebaran/Ramadan/THR — evergreen aja"
+    ],
+    "script_format": {
+      "reel_template": "🎬 REELS SCRIPT – [CID] (Defarchy)\nAngle: [one-liner, biasanya 'warning' style]\n\n🎯 HOOK (0–5 detik)\nVisual: [provocative scene — scrolling marketplace, dompet tipis, dll]\nSpeaker: \"[pancingan provokatif]\"\n(pause dikit, change tone) \"…tapi yakin?\"\n\n🎯 STORY / PROBLEM (5–25 detik)\nVisual: [zoom ke detail, ekspresi mikir]\nSpeaker: \"Lu beli online… tapi lu tau gak [risk]?\"\n\"[risk 2]?\"\n\"[risk 3]?\"\n(beat, lebih pelan) \"[contrast punchline]\"\n\n🎯 SOLUSI (25–33 detik)\nVisual: [showroom Defarchy, teknisi, unit real]\nSpeaker: \"Motor/sepeda listrik itu bukan sekadar beli… tapi soal after sales, service, dan kepastian.\"\n\n🎯 CTA (33–40 detik)\nVisual: [unit + logo Defarchy]\nSpeaker: \"Kalau lu mau yang jelas… dateng, liat langsung, test, baru ambil keputusan.\"\n\"Jangan cuma karena murah… jadi mahal di belakang.\"",
+      "carousel_template": "🎠 CAROUSEL – [CID] (Defarchy)\nAngle: \"edukasi tapi ada rasa 'kalau gak tanya ini, lu bisa nyesel'\"\n\nSLIDE 1 (COVER)\nJudul: [warning headline — 'Jangan Beli... Sebelum Tanya Ini']\nTeks: Murah di depan… belum tentu murah di belakang.\n\nSLIDE 2-6\nJudul: [numbered question / feature]\nTeks: Tanya: [question]\nKarena: [bullets]\n👉 [key takeaway]\n\nSLIDE 7 (CTA)\nJudul: [choice framing — 'Mau hemat atau ribet?']\nTeks: [positioning Defarchy sebagai trusted advisor]\n👉 Dateng, liat langsung, baru mutusin.\nTagline: Beli nyaman, service aman.",
+      "format_rules": [
+        "Timestamp precise (0-5, 5-25, 25-33 detik)",
+        "Emoji section markers: 🎬 🎯 🎠",
+        "Ellipsis '…' untuk dramatic pause",
+        "Repetition pattern: '3 bulan… 6 bulan… masih aman?'",
+        "Contrast setup-punchline: 'Murah di depan… mahal di belakang'",
+        "'👉' untuk carousel key takeaway",
+        "Acting directions: (pause dikit, change tone), (beat, lebih pelan)",
+        "SELALU mention showroom/after sales di CTA"
+      ]
+    },
     "visual": {
       "primary_color": "#FF4500",
       "secondary_color": "#1A1A1A",
@@ -125,19 +253,49 @@
     }
   },
   "Happy Baby": {
-    "tone": "warm, caring, community-driven",
-    "target": "ibu muda / new parents",
-    "cta": "cek produk Happy Baby / join komunitas",
-    "bahasa": "Indonesia lembut",
+    "tone": "warm, poetic, cinematic for emotional moments; practical for tips",
+    "target": "Mom (ibu muda parenting, preferring cinematic American parenting vibe)",
+    "positioning": "Premium parenting community — bukan toko kaos kaki bayi biasa. Emotional moments > selling.",
+    "cta": "cek produk Happy Baby / join komunitas — soft, rekomendasi teman",
+    "tagline": "With You in Every First Baby Step.",
+    "bahasa": "MIX — English untuk emotional/cinematic moments (Reels VO), Indonesia untuk practical tips (Carousel)",
+    "parent_address": "'Mom' (BUKAN 'Bunda' / 'Mama' / 'Ibu' — American parenting vibe)",
     "produk": "kaos kaki bayi",
-    "rules": [
-      "Tone harus empathetic dan supportive ke orang tua baru",
-      "Fokus pada keamanan, kenyamanan, dan kualitas produk",
-      "Jangan judgmental tentang parenting style",
-      "CTA harus terasa sebagai rekomendasi teman, bukan jualan",
-      "Produk saat ini: kaos kaki bayi, tapi sosmed lebih fokus sebagai wadah komunitas ibu muda tentang parenting",
-      "Bangun engagement sebagai komunitas, bukan toko online"
+    "signature_phrases": [
+      "'They grow… faster than you think.' (English VO untuk emotional)",
+      "'Today… they reach for your hand. Tomorrow… they start letting go.'",
+      "'With You in Every First Baby Step.' (tagline)",
+      "'Cek 5 hal ini, Mom' (practical Indonesian carousel)",
+      "'Hal kecil… tapi penting banget'"
     ],
+    "content_split": [
+      "REELS = Emotional English VO + visual poetry (cinematic moments)",
+      "CAROUSEL = Practical tips in Indonesian with 'Mom' address + 👉 markers"
+    ],
+    "rules": [
+      "Panggilan orang tua: 'Mom' — KONSISTEN, jangan pakai 'Bunda'/'Mama'/'Ibu'",
+      "REELS: English VO untuk emotional moments — lebih cinematic & premium feel",
+      "CAROUSEL: Indonesia untuk practical tips, dengan 'Mom' address",
+      "Tagline di setiap post/end frame: 'With You in Every First Baby Step.'",
+      "Tone harus empathetic dan supportive ke orang tua — JANGAN judgmental",
+      "Fokus pada safety, comfort, dan quality (bukan harga/promo)",
+      "Bangun engagement sebagai community parenting, bukan toko online",
+      "Hindari topik seasonal Lebaran/Ramadan/mudik — evergreen parenting aja"
+    ],
+    "script_format": {
+      "reel_template": "🎬 REELS SCRIPT – [CID] (Happy Baby | Xs)\n🎯 HOOK (0–4 detik)\nVisual: [baby moment — ketawa, first step, peluk]\nVO (pelan): \"[emotional English statement]\"\n\n🎯 EMOTIONAL BUILD (4–14 detik)\nVisual: [momen kecil — pegang jari, jatuh, bangun]\nVO: \"[English poetic reflection]\"\n(pause) \"[continuation]\"\n\n🎯 CLOSING (14–18 detik)\nVisual: [orang tua genggam tangan anak, hangat]\nVO: \"Don't miss it.\" or similar gentle line\n\n🎯 END FRAME (18–20 detik)\nVisual: logo Happy Baby (soft fade)\nTagline: \"With You in Every First Baby Step.\"",
+      "carousel_template": "🎠 CAROUSEL – [CID] (Happy Baby | Final)\n\nSLIDE 1 (COVER)\nJudul: [warning or hook headline — Indonesian]\nTeks: [subtitle, addressing Mom]\n👉 Cek [X] hal ini, Mom.\n\nSLIDE 2-N\nJudul: [numbered tip]\nTeks: Kadang [situation].\n[bullet checks]\n👉 [key takeaway, Mom address]\n\nSLIDE AKHIR (CTA)\nJudul: [soft reflective headline]\nTeks: [emotional close]\nHappy Baby — \"With You in Every First Baby Step.\"",
+      "format_rules": [
+        "REELS: ENGLISH VO untuk emotional — 'They grow faster than you think', 'Don't miss it'",
+        "CAROUSEL: INDONESIA dengan 'Mom' address — 'Cek ini ya, Mom'",
+        "Timestamp precise (0-4, 4-14, 14-18 detik) untuk Reels pendek",
+        "Emoji section markers: 🎬 🎯 🎠",
+        "Tagline SELALU di end frame/CTA: 'With You in Every First Baby Step.'",
+        "'👉' marker di carousel untuk tips",
+        "Pacing pelan, reflektif — 'VO (pelan)' direction",
+        "Avoid hard sell — fokus emotional connection + practical care"
+      ]
+    },
     "visual": {
       "primary_color": "#F8B4C8",
       "secondary_color": "#7EC8E3",
@@ -159,17 +317,62 @@
     }
   },
   "Personal Brand Dimas": {
-    "tone": "honest, raw, reflective",
-    "target": "entrepreneur muda",
-    "cta": "follow untuk insight bisnis",
-    "bahasa": "Indonesia campur English",
-    "rules": [
-      "Tulis seolah-olah Dimas sendiri yang bicara, first person",
-      "Sharing pengalaman nyata, termasuk kegagalan",
-      "Boleh vulnerable dan reflective",
-      "CTA: follow, engage, atau share pengalaman serupa",
-      "Dimas adalah owner Sabitah dan creator bot ini"
+    "tone": "raw, vulnerable, reflective, self-deprecating dengan humor",
+    "target": "entrepreneur muda yang lagi struggle",
+    "positioning": "The unfiltered version yang gak di-post di story. Real failures, real insights.",
+    "cta": "NO hard CTA. Soft closing like 'nanti gue share lagi', 'see you di lain kesempatan'",
+    "bahasa": "Indonesia 'gue/lu' dominan, English untuk philosophical closer",
+    "background": "Dimas = owner Sabitah branding agency, multi-business entrepreneur (termasuk Defarchy)",
+    "signature_phrases": [
+      "'Enak ndasmu.' (Java slang tough-love humor, ala ngomong ke diri sendiri)",
+      "'Ini yang gak gue post di story'",
+      "'Gue sempet bangkrut… 2 kali dalam 3 tahun terakhir'",
+      "'Masalah gue bukan di X. Masalah gue di Y.' (self-blame reframe)",
+      "'Jujur aja… gue gak suka'",
+      "'Sometimes letting go is better than holding on and slowly breaking everything' (English philosophical closer)",
+      "'Nanti gue share lagi' / 'See you di lain kesempatan'"
     ],
+    "content_themes": [
+      "Konsistensi (bukan ide) sebagai masalah utama Dimas",
+      "Roller coaster — pola hidup yang naik-turun",
+      "Team = keluarga, bukan employee — emotional loyalty",
+      "Kegagalan spesifik dengan nama orang/brand real (misal: Steven, Defarchy Lampung)",
+      "Behind-the-scenes honest business reality",
+      "Self-critique over self-help preach",
+      "Tangible moments (meeting, makan bareng tim, weekend kerja)"
+    ],
+    "format_signature": [
+      "Opening contradiction: 'Waduh Dimas… enak ya sekarang…' → 'Enak ndasmu.'",
+      "Name real people/brands for grounding ('Temen gue… Steven…')",
+      "Self-blame pattern: 'Masalah gue bukan di X. Masalah gue di Y.'",
+      "English philosophical closer untuk gravitas",
+      "Soft personal closing, no hard CTA"
+    ],
+    "rules": [
+      "Tulis seolah-olah Dimas sendiri yang bicara — first person, 'gue' dominan",
+      "Sharing pengalaman nyata termasuk kegagalan — VULNERABLE OK",
+      "JANGAN hard sell atau self-promote — soft reflective sharing",
+      "Name real people/brands — ground stories in reality",
+      "Pattern self-blame: 'Masalah gue bukan X… masalah gue di Y'",
+      "English hanya untuk philosophical closer, sisanya Indonesia 'gue/lu'",
+      "Tone raw > polished. Feel honest journal, not LinkedIn post",
+      "Hindari topik seasonal Lebaran/Ramadan — evergreen personal reflections"
+    ],
+    "script_format": {
+      "reel_template": "🎬 REELS SCRIPT – [CID] (Personal Brand Dimas)\n🎯 HOOK (0–5 detik)\nVisual: [workspace berantakan, muka capek, diem]\nDimas: \"[opening contradiction — 'Waduh Dimas… enak ya sekarang…']\"\n(senyum dikit, geleng kepala) \"Enak ndasmu.\"\n\n🎯 STORY (5–20 detik)\nVisual: [cut ke aktivitas kerja, notes, capek]\nDimas: \"[raw admission — 'Gue sempet bangkrut…']\"\n\"[continuation with ellipsis pacing]\"\n\n🎯 MOMENT (20–35 detik)\nVisual: [tone lebih tenang, reflective]\nDimas: \"Gue inget banget, temen gue… [NAME]… pernah bilang:\"\n\"[real quote from real person]\"\n(pause) \"Dan makin kesini… gue sadar, dia bener.\"\n\n🎯 INSIGHT (35–50 detik)\nVisual: [close up, personal]\nDimas: \"Masalah gue bukan di [X].\"\n\"Masalah gue di [Y].\"\n\"[self-critique pattern]\"\n\n🎯 CLOSING (50–60 detik)\nVisual: [balik ke kerja, tenang]\nDimas: \"[soft reflective closing]\"\n(beat) \"[English philosophical line OR 'nanti gue share lagi']\"",
+      "carousel_template": "🎠 CAROUSEL – [CID] (Personal Brand Dimas)\nAngle: [raw, unfiltered]\n\nSLIDE 1 (COVER)\nJudul: [bold honest statement]\nTeks: Ini yang gak gue post di story.\n\nSLIDE 2-N\nJudul: [day/moment label — 'Senin', 'Kamis', dll]\nTeks: [story segment, short, honest]\n(beat) \"[reflection]\"\n\nSLIDE AKHIR\nJudul: [insight reframe]\nTeks: [self-blame pattern — 'Masalah gue bukan... masalah gue di...']\n[Soft closing — 'Tapi ya… ini yang gue pilih.']",
+      "format_rules": [
+        "SELALU first person, 'gue' dominan",
+        "Name real people ('Temen gue Steven', 'Tim Defarchy Lampung')",
+        "Acting directions: (pause), (beat), (senyum dikit, geleng kepala)",
+        "Ellipsis '…' sangat heavy untuk natural pace",
+        "Self-blame reframe: 'Masalah gue bukan X. Masalah gue di Y'",
+        "English hanya untuk philosophical closer ('Sometimes letting go is better...')",
+        "JANGAN pakai hard CTA — soft 'see you di lain kesempatan'",
+        "Emoji section markers: 🎬 🎯",
+        "Timestamp precise di Reels (0-5, 5-20, dll)"
+      ]
+    },
     "visual": {
       "primary_color": "#2C2C2C",
       "secondary_color": "#E8E8E8",
@@ -252,12 +455,27 @@
     }
   },
   "Ci Angel": {
-    "tone": "profesional, ramah, santai, ceria",
-    "target": "first-time buyer, investor, keluarga yang butuh properti",
-    "cta": "save konten / hubungi Ci Angel untuk konsultasi properti",
-    "bahasa": "Indonesia",
+    "tone": "profesional, ramah, santai, ceria, 'helpful neighbor'",
+    "target": "first-time buyer, investor, keluarga yang butuh properti di Jabodetabek",
+    "positioning": "Ci Angel = agen properti yang solutif, jujur, bisa dipercaya — bukan agen pushy",
+    "cta": "variatif: 'save dulu', 'hubungi Ci Angel', 'konsultasi gratis', reflektif",
+    "bahasa": "Indonesia casual tapi profesional — 'Ci Angel', pakai 'kamu' atau 'guys'",
     "area": "Jabodetabek",
     "background": "Angelyn Kim, ibu single 1 anak (sudah lulus kuliah), agen properti sebagai side hustle di samping bisnis laundry",
+    "signature_phrases": [
+      "'Ci Angel mau share…' (friendly host tone)",
+      "'Guys, kalau lagi cari rumah di Jabodetabek…'",
+      "'Save dulu ya, siapa tau berguna nanti'",
+      "'Jujur ya guys…' (transparency move)"
+    ],
+    "content_angles": [
+      "Tips first-time buyer (KPR, lokasi, check list)",
+      "Investasi properti (ROI, area berkembang)",
+      "Property hot deal di Jabodetabek",
+      "Journey of life (side hustle sambil laundry, single mom story)",
+      "Red flags beli properti",
+      "Negotiation tips"
+    ],
     "rules": [
       "Posisikan Ci Angel sebagai agen properti yang solutif, jujur, dan bisa dipercaya",
       "Bukan cuma cari profit — tunjukkan sisi helpful dan genuine",
@@ -265,8 +483,22 @@
       "CTA variatif: kadang 'save dulu', kadang 'hubungi Ci Angel', kadang reflektif",
       "Tone ramah dan ceria tapi tetap profesional, jangan terlalu formal",
       "Area fokus: Jabodetabek",
-      "Boleh share tips properti untuk first-time buyer, tips investasi, dll"
+      "Boleh share tips properti untuk first-time buyer, tips investasi, dll",
+      "Hindari topik seasonal Lebaran/Ramadan — evergreen property topics"
     ],
+    "script_format": {
+      "reel_template": "🎬 REELS SCRIPT – [CID] (Ci Angel)\n🎯 HOOK (0–5 detik)\nVisual: [Ci Angel di depan properti / hot deal]\nSpeaker: \"Guys! [provocative property fact/question]\"\n(smile) \"Ci Angel mau share sesuatu nih.\"\n\n🎯 STORY / TIPS (5–25 detik)\nVisual: [walk-through, showing properties, or talking head]\nSpeaker: \"[genuine insight / tip]\"\n\"[continuation]\"\n\n🎯 INSIGHT (25–35 detik)\nVisual: [close, eye contact]\nSpeaker: \"Jujur ya guys… [honest take]\"\n\n🎯 CTA (35–45 detik)\nVisual: [Ci Angel cheerful, contact info]\nSpeaker: \"Save dulu aja, atau DM Ci Angel kalau butuh konsultasi gratis.\"\n\"Kita bantu cari yang tepat buat kamu.\"",
+      "carousel_template": "🎠 CAROUSEL – [CID] (Ci Angel)\nAngle: [helpful friend sharing knowledge]\n\nSLIDE 1 (COVER)\nJudul: [friendly hook — 'Mau Beli Rumah Pertama?']\nTeks: [quick tip preview]\n\nSLIDE 2-N\nJudul: [numbered tip]\nTeks: [practical advice]\n👉 [takeaway]\n\nSLIDE AKHIR (CTA)\nJudul: [Save atau Hubungi]\nTeks: [soft invitation]\nCTA: Save dulu atau DM Ci Angel untuk konsultasi gratis!",
+      "format_rules": [
+        "Tone ramah 'helpful neighbor' — pakai 'guys', 'Ci Angel mau share'",
+        "Ellipsis '…' untuk natural pacing",
+        "Emoji section markers: 🎬 🎯 🎠",
+        "Timestamp precise di Reels",
+        "'👉' marker untuk carousel",
+        "CTA variatif (save / DM / konsultasi)",
+        "Area focus: SELALU mention Jabodetabek kalau relevan"
+      ]
+    },
     "visual": {
       "primary_color": "#E91E63",
       "secondary_color": "#1565C0",
