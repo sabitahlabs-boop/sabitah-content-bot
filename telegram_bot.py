@@ -2541,6 +2541,195 @@ async def production_tasks_command(update: Update, context: ContextTypes.DEFAULT
     await update.message.reply_text(msg)
 
 
+async def send_production_team_daily_worklist(context: ContextTypes.DEFAULT_TYPE):
+    """Daily job: kirim link Production Tasks sheet + summary ke tim Firman/Dedi/Asdi tiap pagi.
+    Kalau individual registered → kirim DM. Else → kirim ke team group dengan tag masing-masing.
+    """
+    try:
+        # Refresh sheet first
+        try:
+            rebuild_production_tasks_sheet()
+        except Exception as e:
+            logger.warning(f"[PROD_WORKLIST] Pre-rebuild failed: {e}")
+
+        # Get sheet URL
+        sheet_id = get_production_tasks_sheet_id()
+        if sheet_id is None:
+            logger.error("[PROD_WORKLIST] Production Tasks sheet not found")
+            return
+
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit#gid={sheet_id}"
+
+        # Read current state & split tasks per person
+        service = get_sheets_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{PRODUCTION_TASKS_SHEET_NAME}'",
+        ).execute()
+        rows = result.get("values", [])
+
+        if len(rows) < 2:
+            # Empty queue
+            msg = (
+                f"GOOD MORNING TEAM!\n\n"
+                f"Production queue kosong — semua task sudah selesai!\n\n"
+                f"Link dashboard: {sheet_url}"
+            )
+            group_id = TEAM_GROUP_ID or context.bot_data.get("team_group_id", "")
+            if group_id:
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(group_id),
+                        text=msg,
+                        disable_web_page_preview=True,
+                    )
+                except Exception as e:
+                    logger.error(f"[PROD_WORKLIST] Send failed: {e}")
+            return
+
+        data_rows = rows[1:]
+
+        # Split tasks per person (only Ready for Production = actual work)
+        firman_tasks = []
+        dedi_tasks = []
+        asdi_tasks = []
+        ready_count = 0
+
+        for row in data_rows:
+            if len(row) < 14:
+                continue
+            status = row[3] if len(row) > 3 else ""
+            if status.lower() != "ready for production":
+                continue
+            ready_count += 1
+
+            firman_done = str(row[0]).upper() == "TRUE"
+            dedi_done = str(row[1]).upper() == "TRUE"
+            asdi_done = str(row[2]).upper() == "TRUE"
+
+            cid = row[7] if len(row) > 7 else ""
+            brand = row[8] if len(row) > 8 else ""
+            ctype = row[9] if len(row) > 9 else ""
+            topic = (row[10] if len(row) > 10 else "")[:55]
+            priority = row[4] if len(row) > 4 else ""
+            days = row[6] if len(row) > 6 else ""
+
+            task_line = f"  [{priority}] {cid} | {brand} | {ctype} | {days}d\n    {topic}"
+
+            if not firman_done:
+                firman_tasks.append(task_line)
+            if not dedi_done:
+                dedi_tasks.append(task_line)
+            if not asdi_done:
+                asdi_tasks.append(task_line)
+
+        today_str = datetime.now().strftime("%A, %d %B %Y")
+
+        # Upcoming pipeline (Need to Review + Ready for Client Review)
+        upcoming = sum(
+            1 for row in data_rows
+            if len(row) > 3 and row[3].lower() in ("need to review", "ready for client review")
+        )
+
+        # Build summary header
+        header = (
+            f"GOOD MORNING TEAM!\n"
+            f"{today_str}\n\n"
+            f"PRODUCTION QUEUE STATUS:\n"
+            f"  Ready for Production: {ready_count}\n"
+            f"  Upcoming (in review): {upcoming}\n\n"
+        )
+
+        # Try to send individual DMs first
+        team_roles = {
+            "Firman": {"tasks": firman_tasks, "role": "Visual Designer (Canva)"},
+            "Dedi": {"tasks": dedi_tasks, "role": "Main Editor (Video)"},
+            "Asdi": {"tasks": asdi_tasks, "role": "Social Media (Caption + Posting)"},
+        }
+
+        individual_sent = []
+        group_needed = []
+
+        for name, info in team_roles.items():
+            tasks = info["tasks"]
+            role = info["role"]
+            pic_chat = PIC_REGISTRY.get(name, {}).get("chat_id")
+
+            if not tasks:
+                # No tasks for this person — skip DM
+                continue
+
+            task_summary = "\n".join(tasks[:8])
+            remaining = len(tasks) - 8 if len(tasks) > 8 else 0
+            remaining_text = f"\n  ... dan {remaining} task lagi" if remaining > 0 else ""
+
+            personal_msg = (
+                f"Pagi {name}!\n"
+                f"{today_str}\n\n"
+                f"Role: {role}\n"
+                f"Tasks kamu hari ini: {len(tasks)}\n\n"
+                f"DETAIL:\n{task_summary}{remaining_text}\n\n"
+                f"Dashboard lengkap:\n{sheet_url}\n\n"
+                f"Cara pakai:\n"
+                f"1. Buka dashboard\n"
+                f"2. Cari kolom '{name} ✓'\n"
+                f"3. Centang kalau task kamu sudah selesai\n"
+                f"4. Kalau Firman + Dedi + Asdi semua checked → otomatis Done\n\n"
+                f"Semangat {name}!"
+            )
+
+            if pic_chat:
+                try:
+                    await context.bot.send_message(
+                        chat_id=pic_chat,
+                        text=personal_msg,
+                        disable_web_page_preview=True,
+                    )
+                    individual_sent.append(name)
+                except Exception as e:
+                    logger.warning(f"[PROD_WORKLIST] Failed to DM {name}: {e}")
+                    group_needed.append((name, tasks, role))
+            else:
+                group_needed.append((name, tasks, role))
+
+        # For people not yet registered → send summary to team group
+        group_id = TEAM_GROUP_ID or context.bot_data.get("team_group_id", "")
+        if group_needed and group_id:
+            group_parts = [header, "BELUM REGISTER DM (hubungi bot dengan /register <role>):\n"]
+
+            for name, tasks, role in group_needed:
+                task_summary = "\n".join(tasks[:5])
+                remaining = len(tasks) - 5 if len(tasks) > 5 else 0
+                remaining_text = f"\n  ... dan {remaining} lagi" if remaining > 0 else ""
+
+                group_parts.append(
+                    f"\n{name} — {role}\n"
+                    f"  Tasks: {len(tasks)}\n"
+                    f"{task_summary}{remaining_text}\n"
+                )
+
+            group_parts.append(f"\nDashboard:\n{sheet_url}")
+            group_msg = "\n".join(group_parts)
+
+            # Telegram message limit ~4096 chars, chunk if needed
+            try:
+                for i in range(0, len(group_msg), 4000):
+                    await context.bot.send_message(
+                        chat_id=int(group_id),
+                        text=group_msg[i:i+4000],
+                        disable_web_page_preview=True,
+                    )
+            except Exception as e:
+                logger.error(f"[PROD_WORKLIST] Group send failed: {e}")
+
+        logger.info(
+            f"[PROD_WORKLIST] Sent: individual={individual_sent}, group_fallback={[n for n, _, _ in group_needed]}"
+        )
+
+    except Exception as e:
+        logger.error(f"[PROD_WORKLIST] Failed: {e}", exc_info=True)
+
+
 async def auto_sync_production_tasks(context: ContextTypes.DEFAULT_TYPE):
     """Background job: auto-sync Production Tasks every X minutes."""
     try:
@@ -5268,6 +5457,11 @@ def main():
         worklist_time = dt_time(hour=7, minute=30, second=0, tzinfo=wib)
         app.job_queue.run_daily(send_dimas_daily_worklist, time=worklist_time, name="dimas_worklist")
         logger.info(f"[WORKLIST] Daily worklist ke Dimas scheduled at {worklist_time} WIB")
+
+        # Daily worklist ke tim produksi (Firman/Dedi/Asdi) jam 07:45 WIB
+        prod_worklist_time = dt_time(hour=7, minute=45, second=0, tzinfo=wib)
+        app.job_queue.run_daily(send_production_team_daily_worklist, time=prod_worklist_time, name="production_team_worklist")
+        logger.info(f"[PROD_WORKLIST] Daily worklist ke tim produksi scheduled at {prod_worklist_time} WIB")
     else:
         logger.warning("[REPORT] JobQueue not available, daily report disabled")
 
