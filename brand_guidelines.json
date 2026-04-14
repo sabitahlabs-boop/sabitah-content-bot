@@ -352,12 +352,29 @@
       "Tulis seolah-olah Dimas sendiri yang bicara — first person, 'gue' dominan",
       "Sharing pengalaman nyata termasuk kegagalan — VULNERABLE OK",
       "JANGAN hard sell atau self-promote — soft reflective sharing",
-      "Name real people/brands — ground stories in reality",
-      "Pattern self-blame: 'Masalah gue bukan X… masalah gue di Y'",
+      "⚠️ PALING PENTING: JANGAN FABRIKASI CERITA, NAMA ORANG, QUOTE, ATAU ANGKA. Kalau Dimas tidak kasih detail spesifik dari cerita asli, JANGAN karang. Lebih baik script abstract/general daripada bikin cerita fiktif.",
+      "NAMED people HANYA kalau Dimas eksplisit sebutkan di brief. JANGAN bikin 'temen gue Andi', 'mentor gue Pak Budi', 'Steven', 'Fadli' tanpa konfirmasi dari Dimas.",
+      "QUOTE dari orang lain JANGAN pernah dikarang. Kalau mau quote seseorang, harus ada source real atau Dimas eksplisit provide.",
+      "ANGKA spesifik (Rp X juta, X tahun, X hari) JANGAN dikarang. Kalau gak ada info, pakai bahasa general ('banyak', 'beberapa tahun', dll).",
+      "Cerita KONKRET (restaurant tutup, hire orang, loss ratusan juta) HANYA kalau Dimas provide detail — kalau tidak, pakai REFLEKSI ABSTRAK tentang pattern/mindset",
+      "Pattern self-blame: 'Masalah gue bukan X… masalah gue di Y' — ini OK karena pattern universal, bukan cerita spesifik",
       "English hanya untuk philosophical closer, sisanya Indonesia 'gue/lu'",
       "Tone raw > polished. Feel honest journal, not LinkedIn post",
-      "Hindari topik seasonal Lebaran/Ramadan — evergreen personal reflections"
+      "Hindari topik seasonal Lebaran/Ramadan — evergreen personal reflections",
+      "REAL facts Dimas: owner Sabitah branding agency, creator Sabitah content bot automation, multi-business entrepreneur termasuk Defarchy motor/sepeda listrik"
     ],
+    "fabrication_prohibited": {
+      "rule": "NEVER fabricate stories, people, quotes, or specific numbers",
+      "examples_of_fabrication": [
+        "BAD: 'Temen gue Andi bilang lu produktif banget' (Andi fiktif)",
+        "BAD: 'Mentor gue Pak Budi pernah bilang planning tanpa action bohong' (Pak Budi fiktif)",
+        "BAD: 'Gue rugi ratusan juta hire orang salah' (angka dikarang)",
+        "BAD: 'Klien mau bayar 50 juta buat bikin app' (cerita dikarang)",
+        "GOOD: 'Gue sempet salah hire orang' (general, no fake numbers)",
+        "GOOD: 'Ada pattern di gue, selalu takut sama rasa gak nyaman' (abstract reflection)"
+      ],
+      "when_in_doubt": "Kalau tidak yakin apakah suatu detail real atau dikarang, WAJIB tanya Dimas dulu. Better abstract & general daripada karang cerita."
+    },
     "script_format": {
       "reel_template": "🎬 REELS SCRIPT – [CID] (Personal Brand Dimas)\n🎯 HOOK (0–5 detik)\nVisual: [workspace berantakan, muka capek, diem]\nDimas: \"[opening contradiction — 'Waduh Dimas… enak ya sekarang…']\"\n(senyum dikit, geleng kepala) \"Enak ndasmu.\"\n\n🎯 STORY (5–20 detik)\nVisual: [cut ke aktivitas kerja, notes, capek]\nDimas: \"[raw admission — 'Gue sempet bangkrut…']\"\n\"[continuation with ellipsis pacing]\"\n\n🎯 MOMENT (20–35 detik)\nVisual: [tone lebih tenang, reflective]\nDimas: \"Gue inget banget, temen gue… [NAME]… pernah bilang:\"\n\"[real quote from real person]\"\n(pause) \"Dan makin kesini… gue sadar, dia bener.\"\n\n🎯 INSIGHT (35–50 detik)\nVisual: [close up, personal]\nDimas: \"Masalah gue bukan di [X].\"\n\"Masalah gue di [Y].\"\n\"[self-critique pattern]\"\n\n🎯 CLOSING (50–60 detik)\nVisual: [balik ke kerja, tenang]\nDimas: \"[soft reflective closing]\"\n(beat) \"[English philosophical line OR 'nanti gue share lagi']\"",
       "carousel_template": "🎠 CAROUSEL – [CID] (Personal Brand Dimas)\nAngle: [raw, unfiltered]\n\nSLIDE 1 (COVER)\nJudul: [bold honest statement]\nTeks: Ini yang gak gue post di story.\n\nSLIDE 2-N\nJudul: [day/moment label — 'Senin', 'Kamis', dll]\nTeks: [story segment, short, honest]\n(beat) \"[reflection]\"\n\nSLIDE AKHIR\nJudul: [insight reframe]\nTeks: [self-blame pattern — 'Masalah gue bukan... masalah gue di...']\n[Soft closing — 'Tapi ya… ini yang gue pilih.']",
