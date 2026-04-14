@@ -535,7 +535,7 @@ def append_to_sheet(headers, col_map, brand, content_id, date_str,
         "topik": topik,
         "hook": angle,
         "brief": brief,
-        "script_status": "Done",
+        "script_status": "Need to Review",
         "script_owner": "Dimas",
         "script_notes": script or full_output,
         "production_status": "Not Started",
@@ -1934,7 +1934,7 @@ def rebuild_my_tasks_sheet():
 
     pending = []
     for row in data:
-        if col(row, "script_status").lower() != "done":
+        if col(row, "script_status").lower() != "need to review":
             continue
         date_obj = _parse_planned_date(col(row, "date"))
         days_until = (date_obj - today).days if date_obj else 999
@@ -2037,7 +2037,7 @@ def rebuild_my_tasks_sheet():
 
 def sync_my_tasks_completions():
     """Read My Tasks sheet, find rows with Done?=TRUE, update Master Tracker
-    Script Status to 'Ready for Production', then rebuild the sheet.
+    Script Status to 'Ready for Client Review' (next stage after Dimas approves), then rebuild the sheet.
     Returns dict with counts."""
     service = get_sheets_service()
 
@@ -2083,7 +2083,7 @@ def sync_my_tasks_completions():
         if cid in completed_cids:
             actual_row = row_idx + 3
             cell = f"'{SHEET_NAME}'!{col_to_letter(ss_col)}{actual_row}"
-            updates.append({"range": cell, "values": [["Ready for Production"]]})
+            updates.append({"range": cell, "values": [["Ready for Client Review"]]})
             updated_cids.append(cid)
 
     if updates:
@@ -2091,7 +2091,7 @@ def sync_my_tasks_completions():
             spreadsheetId=SPREADSHEET_ID,
             body={"valueInputOption": "RAW", "data": updates},
         ).execute()
-        logger.info(f"[MY_TASKS] Marked {len(updated_cids)} scripts as Ready for Production: {updated_cids}")
+        logger.info(f"[MY_TASKS] Marked {len(updated_cids)} scripts as Ready for Client Review: {updated_cids}")
 
     # Rebuild the sheet to remove completed items + add new Done scripts
     rebuild_stats = rebuild_my_tasks_sheet()
@@ -2123,7 +2123,7 @@ async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = (
         f"MY TASKS SYNC COMPLETE\n\n"
-        f"Marked as Ready for Production: {completed}\n"
+        f"Marked as Ready for Client Review: {completed}\n"
     )
     if completed > 0:
         cids = result.get("completed_cids", [])
@@ -2202,11 +2202,14 @@ async def send_dimas_daily_worklist(context: ContextTypes.DEFAULT_TYPE):
                 + "\n".join(top_lines) + "\n\n"
                 f"Buka dashboard untuk review semua:\n"
                 f"{sheet_url}\n\n"
+                f"Workflow:\n"
+                f"  No Progress → Need to Review → Ready for Client Review → Ready for Production\n\n"
                 f"Cara pakai:\n"
                 f"1. Buka link di atas\n"
                 f"2. Review script urgent dulu (klik Script Link)\n"
                 f"3. Centang checkbox 'Done?' kalau approve\n"
-                f"4. Otomatis masuk ke antrian Asdi/Dedi/Firman\n\n"
+                f"4. Script otomatis pindah ke 'Ready for Client Review'\n"
+                f"5. Setelah client approve, manual ubah ke 'Ready for Production' (masuk PIC produksi)\n\n"
                 f"Semangat Dimas!"
             )
 
@@ -2237,9 +2240,10 @@ async def auto_sync_my_tasks(context: ContextTypes.DEFAULT_TYPE):
             if dimas_chat:
                 cids = result.get("completed_cids", [])
                 msg = (
-                    f"AUTO-SYNC: {len(cids)} script ditandai Ready for Production\n"
+                    f"AUTO-SYNC: {len(cids)} script ditandai Ready for Client Review\n"
                     f"  {', '.join(cids[:10])}\n\n"
-                    f"Sudah masuk antrian Asdi/Dedi/Firman."
+                    f"Sudah siap untuk di-review oleh client.\n"
+                    f"Run /client_review <brand> untuk generate doc ke client."
                 )
                 try:
                     await context.bot.send_message(chat_id=dimas_chat, text=msg)
