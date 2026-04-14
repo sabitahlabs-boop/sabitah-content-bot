@@ -2229,6 +2229,341 @@ async def send_dimas_daily_worklist(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[WORKLIST] Failed to send daily worklist: {e}", exc_info=True)
 
 
+# ============================================================
+# PRODUCTION TASKS — Asdi/Dedi/Firman team queue
+# ============================================================
+
+PRODUCTION_TASKS_SHEET_NAME = "Production Tasks - Team"
+
+
+def get_production_tasks_sheet_id():
+    try:
+        service = get_sheets_service()
+        meta = service.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
+        for s in meta["sheets"]:
+            if s["properties"]["title"] == PRODUCTION_TASKS_SHEET_NAME:
+                return s["properties"]["sheetId"]
+    except Exception as e:
+        logger.error(f"[PROD_TASKS] Failed to get sheet id: {e}")
+    return None
+
+
+def _get_role_needs(content_type):
+    """Determine which team members need to work on this content type."""
+    ct = content_type.lower()
+    needs = {"firman": False, "dedi": False, "asdi": False}
+    if any(k in ct for k in ("carousel", "feed", "single", "post")):
+        needs["firman"] = True
+    if any(k in ct for k in ("reel", "story", "stories")):
+        needs["dedi"] = True
+    needs["asdi"] = True  # Always needs caption/posting
+    return needs
+
+
+def rebuild_production_tasks_sheet():
+    """Rebuild Production Tasks - Team sheet from Master Tracker."""
+    headers, data, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+
+    def col(row, name):
+        idx = col_map.get(name)
+        if idx is not None and idx < len(row):
+            return row[idx].strip()
+        return ""
+
+    today = datetime.now()
+    target_statuses = ("need to review", "ready for client review", "ready for production")
+    status_rank = {
+        "ready for production": 0,
+        "ready for client review": 1,
+        "need to review": 2,
+    }
+
+    pending = []
+    for row in data:
+        ss = col(row, "script_status").lower()
+        if ss not in target_statuses:
+            continue
+
+        # Skip if Production Status already Done
+        ps = col(row, "production_status").lower()
+        if ps == "done":
+            continue
+
+        cid = col(row, "content_id")
+        if not cid:
+            continue
+
+        date_obj = _parse_planned_date(col(row, "date"))
+        days_until = (date_obj - today).days if date_obj else 999
+        ctype = col(row, "content_type")
+        roles = _get_role_needs(ctype)
+
+        pending.append({
+            "cid": cid,
+            "brand": col(row, "brand"),
+            "type": ctype,
+            "topic": col(row, "topik"),
+            "hook": col(row, "hook"),
+            "date": col(row, "date"),
+            "days_until": days_until,
+            "priority": col(row, "priority") or "Medium",
+            "status": col(row, "script_status"),
+            "script_link": col(row, "script_link"),
+            "roles": roles,
+        })
+
+    pending.sort(key=lambda x: (
+        status_rank.get(x["status"].lower(), 9),
+        x["days_until"],
+        PRIORITY_RANK_MAP.get(x["priority"].lower(), 3),
+    ))
+
+    service = get_sheets_service()
+    sheet_id = get_production_tasks_sheet_id()
+    if sheet_id is None:
+        return {"error": "Production Tasks - Team sheet not found. Run setup_production_tasks_sheet.py"}
+
+    # Clear existing data
+    service.spreadsheets().values().clear(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"'{PRODUCTION_TASKS_SHEET_NAME}'",
+    ).execute()
+
+    # Build rows
+    sheet_headers = [
+        "Firman ✓", "Dedi ✓", "Asdi ✓",
+        "Status", "Priority", "Date", "Days",
+        "Content ID", "Brand", "Type", "Topic", "Hook",
+        "Script Link", "Notes"
+    ]
+    rows = [sheet_headers]
+    for p in pending:
+        days = p["days_until"] if p["days_until"] != 999 else ""
+        firman_val = False if p["roles"]["firman"] else True
+        dedi_val = False if p["roles"]["dedi"] else True
+        asdi_val = False if p["roles"]["asdi"] else True
+
+        note_parts = []
+        if p["roles"]["firman"]:
+            note_parts.append("Firman: Canva visual")
+        if p["roles"]["dedi"]:
+            note_parts.append("Dedi: Video edit")
+        if p["roles"]["asdi"]:
+            note_parts.append("Asdi: Caption + posting")
+        notes = " | ".join(note_parts)
+
+        rows.append([
+            firman_val, dedi_val, asdi_val,
+            p["status"], p["priority"], p["date"], days,
+            p["cid"], p["brand"], p["type"],
+            p["topic"], p["hook"][:60], p["script_link"], notes,
+        ])
+
+    service.spreadsheets().values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"'{PRODUCTION_TASKS_SHEET_NAME}'!A1",
+        valueInputOption="USER_ENTERED",
+        body={"values": rows},
+    ).execute()
+
+    # Re-add checkbox validations
+    validation_requests = []
+    for col_idx in range(3):
+        validation_requests.append({
+            "setDataValidation": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 1,
+                    "endRowIndex": len(rows) + 50,
+                    "startColumnIndex": col_idx,
+                    "endColumnIndex": col_idx + 1,
+                },
+                "rule": {
+                    "condition": {"type": "BOOLEAN"},
+                    "showCustomUi": True,
+                    "strict": False,
+                },
+            }
+        })
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=SPREADSHEET_ID,
+        body={"requests": validation_requests},
+    ).execute()
+
+    from collections import Counter
+    status_counts = Counter(p["status"] for p in pending)
+    return {
+        "total": len(pending),
+        "ready_for_production": status_counts.get("Ready for Production", 0),
+        "ready_for_client_review": status_counts.get("Ready for Client Review", 0),
+        "need_to_review": status_counts.get("Need to Review", 0),
+    }
+
+
+def sync_production_tasks_completions():
+    """Read Production Tasks sheet, find rows where all 3 checkboxes are TRUE,
+    update Master Tracker Production Status to 'Done', then rebuild the sheet.
+    Returns dict with counts."""
+    service = get_sheets_service()
+
+    try:
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{PRODUCTION_TASKS_SHEET_NAME}'",
+        ).execute()
+    except Exception as e:
+        return {"error": f"Failed to read Production Tasks sheet: {e}"}
+
+    rows = result.get("values", [])
+    if len(rows) < 2:
+        return {"completed": 0}
+
+    # Find rows where all 3 checkboxes are TRUE
+    completed_cids = []
+    for row in rows[1:]:
+        if not row or len(row) < 8:
+            continue
+        firman = str(row[0]).upper() == "TRUE" if len(row) > 0 else False
+        dedi = str(row[1]).upper() == "TRUE" if len(row) > 1 else False
+        asdi = str(row[2]).upper() == "TRUE" if len(row) > 2 else False
+        if firman and dedi and asdi:
+            cid = row[7] if len(row) > 7 else ""
+            if cid:
+                completed_cids.append(cid)
+
+    if not completed_cids:
+        return {"completed": 0}
+
+    # Update Master Tracker
+    headers, data, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+    prod_col = col_map.get("production_status")
+    asset_col = col_map.get("asset_status")
+    edit_col = col_map.get("editing_status")
+    caption_col = col_map.get("caption_status")
+    posting_col = col_map.get("posting_status")
+    cid_col = col_map.get("content_id", 1)
+
+    updates = []
+    updated_cids = []
+    for row_idx, row in enumerate(data):
+        if cid_col >= len(row):
+            continue
+        cid = row[cid_col].strip()
+        if cid not in completed_cids:
+            continue
+
+        actual_row = row_idx + 3
+        # Update all downstream statuses to Done
+        if prod_col is not None:
+            updates.append({
+                "range": f"'{SHEET_NAME}'!{col_to_letter(prod_col)}{actual_row}",
+                "values": [["Done"]],
+            })
+        if asset_col is not None:
+            updates.append({
+                "range": f"'{SHEET_NAME}'!{col_to_letter(asset_col)}{actual_row}",
+                "values": [["Complete"]],
+            })
+        if edit_col is not None:
+            updates.append({
+                "range": f"'{SHEET_NAME}'!{col_to_letter(edit_col)}{actual_row}",
+                "values": [["Done"]],
+            })
+        if caption_col is not None:
+            updates.append({
+                "range": f"'{SHEET_NAME}'!{col_to_letter(caption_col)}{actual_row}",
+                "values": [["Done"]],
+            })
+        if posting_col is not None:
+            updates.append({
+                "range": f"'{SHEET_NAME}'!{col_to_letter(posting_col)}{actual_row}",
+                "values": [["Posted"]],
+            })
+        updated_cids.append(cid)
+
+    if updates:
+        # Batch in chunks
+        CHUNK = 500
+        for i in range(0, len(updates), CHUNK):
+            chunk = updates[i:i+CHUNK]
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=SPREADSHEET_ID,
+                body={"valueInputOption": "RAW", "data": chunk},
+            ).execute()
+        logger.info(f"[PROD_TASKS] Marked {len(updated_cids)} as Done: {updated_cids}")
+
+    # Rebuild the sheet to remove done items
+    rebuild_stats = rebuild_production_tasks_sheet()
+
+    return {
+        "completed": len(updated_cids),
+        "completed_cids": updated_cids,
+        "rebuild": rebuild_stats,
+    }
+
+
+async def production_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/production_tasks — Sync production team task completions."""
+    await update.message.reply_text("Syncing Production Tasks sheet...")
+    try:
+        result = sync_production_tasks_completions()
+    except Exception as e:
+        logger.error(f"[PROD_TASKS] Sync failed: {e}", exc_info=True)
+        await update.message.reply_text(f"Error: {str(e)}")
+        return
+
+    if "error" in result:
+        await update.message.reply_text(f"Error: {result['error']}")
+        return
+
+    completed = result.get("completed", 0)
+    rebuild = result.get("rebuild", {})
+
+    msg = (
+        f"PRODUCTION TASKS SYNC COMPLETE\n\n"
+        f"Marked as Done: {completed}\n"
+    )
+    if completed > 0:
+        cids = result.get("completed_cids", [])
+        msg += f"  {', '.join(cids[:10])}{'...' if len(cids) > 10 else ''}\n"
+
+    msg += (
+        f"\nProduction Tasks rebuilt:\n"
+        f"  Total pending: {rebuild.get('total', 0)}\n"
+        f"  Ready for Production: {rebuild.get('ready_for_production', 0)}\n"
+        f"  Ready for Client Review: {rebuild.get('ready_for_client_review', 0)}\n"
+        f"  Need to Review: {rebuild.get('need_to_review', 0)}\n\n"
+        f"Buka sheet 'Production Tasks - Team' untuk lihat queue.\n"
+        f"Centang semua checkbox (Firman + Dedi + Asdi) kalau task sudah selesai."
+    )
+    await update.message.reply_text(msg)
+
+
+async def auto_sync_production_tasks(context: ContextTypes.DEFAULT_TYPE):
+    """Background job: auto-sync Production Tasks every X minutes."""
+    try:
+        result = sync_production_tasks_completions()
+        if result.get("completed", 0) > 0:
+            logger.info(f"[PROD_TASKS] Auto-sync completed: {result}")
+            # Notify team group
+            group_id = TEAM_GROUP_ID or context.bot_data.get("team_group_id", "")
+            if group_id:
+                cids = result.get("completed_cids", [])
+                msg = (
+                    f"PRODUCTION DONE: {len(cids)} task selesai!\n"
+                    f"  {', '.join(cids[:10])}\n\n"
+                    f"Semua stage selesai — Production Status: Done, Posting: Posted."
+                )
+                try:
+                    await context.bot.send_message(chat_id=int(group_id), text=msg)
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.error(f"[PROD_TASKS] Auto-sync error: {e}")
+
+
 async def auto_sync_my_tasks(context: ContextTypes.DEFAULT_TYPE):
     """Background job: auto-sync My Tasks every X minutes."""
     try:
@@ -4870,6 +5205,7 @@ def main():
     app.add_handler(CommandHandler("visual", visual_command))
     app.add_handler(CommandHandler("client_review", client_review_command))
     app.add_handler(CommandHandler("my_tasks", my_tasks_command))
+    app.add_handler(CommandHandler("production_tasks", production_tasks_command))
     app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -4893,6 +5229,7 @@ def main():
             BotCommand("visual", "Generate Canva design (e.g., /visual SB-027)"),
             BotCommand("client_review", "Buat doc review per brand (e.g., /client_review Sabitah)"),
             BotCommand("my_tasks", "Sync My Tasks - Dimas approval queue"),
+            BotCommand("production_tasks", "Sync Production Tasks - Team (Asdi/Dedi/Firman)"),
             BotCommand("caption", "Generate caption + hashtag"),
             BotCommand("calendar", "Buat content calendar 1 bulan"),
             BotCommand("repurpose", "Repurpose script ke format baru"),
@@ -4922,6 +5259,10 @@ def main():
         # Auto-sync My Tasks every 2 minutes
         app.job_queue.run_repeating(auto_sync_my_tasks, interval=120, first=60, name="auto_sync_my_tasks")
         logger.info(f"[MY_TASKS] Auto-sync scheduled every 2 minutes")
+
+        # Auto-sync Production Tasks every 2 minutes (offset by 30s to avoid collision)
+        app.job_queue.run_repeating(auto_sync_production_tasks, interval=120, first=90, name="auto_sync_production_tasks")
+        logger.info(f"[PROD_TASKS] Auto-sync scheduled every 2 minutes")
 
         # Daily worklist ke Dimas jam 07:30 WIB
         worklist_time = dt_time(hour=7, minute=30, second=0, tzinfo=wib)
