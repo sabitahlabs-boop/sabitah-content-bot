@@ -2504,6 +2504,329 @@ def sync_production_tasks_completions():
     }
 
 
+# ============================================================
+# LEGUS BRIEF — Verified content generation for LEGUS
+# ============================================================
+
+LEGUS_BRIEF_TEMPLATE = """Format brief untuk /legus_brief:
+
+/legus_brief
+Topic: [Judul konten]
+Content Type: [Carousel / Reel / Feed]
+Facts:
+- [Fakta 1 yang sudah di-verify, dengan source]
+- [Fakta 2 yang sudah di-verify, dengan source]
+- [dst]
+Source: [Link/reference ke UU/PP/Perpres atau media kredibel]
+CTA: [Call to action yang diinginkan]
+
+CONTOH:
+/legus_brief
+Topic: UU PDP yang Harus UMKM Tau
+Content Type: Carousel
+Facts:
+- UU No. 27/2022 sudah berlaku penuh sejak Oktober 2024 (masa transisi 2 tahun berakhir)
+- Sanksi administratif paling tinggi 2% dari pendapatan tahunan (Pasal 57)
+- Wajib consent eksplisit saat collect data pelanggan (Pasal 20)
+- Kebocoran data wajib dilaporkan ke Kominfo dalam 72 jam
+- Data subject punya hak minta dihapus datanya
+Source: UU No. 27/2022 di JDIH Kemenkumham
+CTA: Konsultasi gratis LEGUS untuk compliance assessment UU PDP
+"""
+
+
+def parse_legus_brief(text):
+    """Parse the brief text into structured fields."""
+    fields = {"topic": "", "content_type": "Carousel", "facts": [], "source": "", "cta": ""}
+    current_section = None
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        low = stripped.lower()
+        if low.startswith("topic:"):
+            fields["topic"] = stripped.split(":", 1)[1].strip()
+            current_section = "topic"
+        elif low.startswith("content type:") or low.startswith("type:"):
+            fields["content_type"] = stripped.split(":", 1)[1].strip()
+            current_section = "content_type"
+        elif low.startswith("facts:"):
+            current_section = "facts"
+            rest = stripped.split(":", 1)[1].strip()
+            if rest:
+                fields["facts"].append(rest)
+        elif low.startswith("source:") or low.startswith("sources:"):
+            fields["source"] = stripped.split(":", 1)[1].strip()
+            current_section = "source"
+        elif low.startswith("cta:"):
+            fields["cta"] = stripped.split(":", 1)[1].strip()
+            current_section = "cta"
+        elif current_section == "facts" and (stripped.startswith("-") or stripped.startswith("•")):
+            fact = stripped.lstrip("-•").strip()
+            if fact:
+                fields["facts"].append(fact)
+        elif current_section == "source" and not low.startswith(("topic", "type", "facts", "cta")):
+            fields["source"] = (fields["source"] + " " + stripped).strip()
+        elif current_section == "cta" and not low.startswith(("topic", "type", "facts", "source")):
+            fields["cta"] = (fields["cta"] + " " + stripped).strip()
+
+    return fields
+
+
+def generate_legus_script(claude_client, brief, content_id):
+    """Generate LEGUS script from verified brief using strict guidelines."""
+    guidelines = load_brand_guidelines()
+    legus_info = guidelines.get("LEGUS", {})
+    fmt = legus_info.get("script_format", {})
+
+    ctype = brief["content_type"].lower()
+    if "carousel" in ctype:
+        template = fmt.get("carousel_template", "")
+        format_type = "CAROUSEL"
+    elif "reel" in ctype or "story" in ctype:
+        template = fmt.get("reel_template", "")
+        format_type = "REEL"
+    else:
+        template = fmt.get("carousel_template", "")
+        format_type = "FEED"
+
+    facts_str = "\n".join(f"- {f}" for f in brief["facts"])
+    forbidden = "\n".join(legus_info.get("FORBIDDEN_PATTERNS", []))
+    preferred_openers = "\n".join(legus_info.get("PREFERRED_OPENERS", []))
+
+    prompt = f"""Tulis script konten LEGUS ({format_type}) berdasarkan brief yang SUDAH DI-VERIFY di bawah.
+
+CONTENT ID: {content_id}
+TOPIC: {brief['topic']}
+
+VERIFIED FACTS (pakai HANYA fakta-fakta ini, JANGAN tambahkan):
+{facts_str}
+
+SOURCE: {brief['source']}
+
+CTA: {brief['cta']}
+
+BRAND POSITIONING LEGUS:
+{legus_info.get('positioning', '')}
+
+TONE: {legus_info.get('tone', '')}
+
+CRITICAL RULES — NON-NEGOTIABLE:
+1. JANGAN fabrikasi statistik apapun. Kalau brief tidak ada angka %, JANGAN bikin %.
+2. JANGAN tambah fakta yang tidak ada di brief. Stick to verified facts only.
+3. JANGAN pakai pattern fear-mongering (ancaman, countdown deadline, "bisnis Anda bisa dihentikan")
+4. JANGAN pakai opener "X% pengusaha tidak tahu" atau sejenisnya
+5. Tone HARUS tenang, edukasi, bikin audiens lebih TENANG dan lebih INFORMED
+6. Cite source yang sudah di-verify sesuai brief
+
+FORBIDDEN PATTERNS:
+{forbidden}
+
+PREFERRED OPENERS (pilih salah satu style):
+{preferred_openers}
+
+TEMPLATE FORMAT:
+{template}
+
+FORMAT RULES:
+{chr(10).join('- ' + r for r in fmt.get('format_rules', []))}
+
+INSTRUKSI:
+1. Gunakan HANYA facts dari brief — JANGAN tambah fakta, angka, atau claim baru
+2. Cite source dengan benar sesuai yang ada di brief
+3. Bahasa formal tapi accessible ('Anda')
+4. Tone edukasi — bikin lebih tenang, bukan panik
+5. Output HANYA script, tanpa metadata header
+6. Pakai emoji markers (🎠 atau 🎬) + timestamp (untuk Reels)
+7. Kalau content type Carousel, buat 5-7 slide. Kalau Reel, buat monolog ~30-45 detik.
+"""
+
+    msg = claude_client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=2500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return msg.content[0].text.strip()
+
+
+def get_next_legus_cid():
+    """Find next available LEGUS CID."""
+    headers, data, _ = read_sheet_info()
+    col_map = get_header_index(headers)
+    cid_col = col_map.get("content_id", 1)
+
+    max_num = 0
+    for row in data:
+        if cid_col >= len(row):
+            continue
+        cid = row[cid_col].strip()
+        if cid.startswith("LG-"):
+            try:
+                num = int(cid[3:])
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                pass
+    return f"LG-{max_num + 1:03d}"
+
+
+async def legus_brief_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/legus_brief — Generate LEGUS script dari verified brief (no fabrication)."""
+    raw_text = update.message.text or ""
+    # Strip the command itself
+    parts = raw_text.split("\n", 1)
+    body = parts[1] if len(parts) > 1 else ""
+
+    if not body.strip():
+        await update.message.reply_text(LEGUS_BRIEF_TEMPLATE)
+        return
+
+    # Parse brief
+    brief = parse_legus_brief(body)
+
+    # Validate
+    if not brief["topic"]:
+        await update.message.reply_text("Missing: Topic. Format:\n\n" + LEGUS_BRIEF_TEMPLATE)
+        return
+    if not brief["facts"]:
+        await update.message.reply_text("Missing: Facts. Minimum 2-3 verified facts dengan source.\n\n" + LEGUS_BRIEF_TEMPLATE)
+        return
+    if not brief["source"]:
+        await update.message.reply_text("Missing: Source. Harus ada UU/PP/media credible source.\n\n" + LEGUS_BRIEF_TEMPLATE)
+        return
+
+    await update.message.reply_text(
+        f"Processing LEGUS brief...\n"
+        f"Topic: {brief['topic']}\n"
+        f"Type: {brief['content_type']}\n"
+        f"Facts: {len(brief['facts'])} verified\n"
+        f"Source: {brief['source'][:60]}"
+    )
+
+    try:
+        # Generate content ID
+        cid = get_next_legus_cid()
+
+        # Generate script
+        claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        script = generate_legus_script(claude_client, brief, cid)
+
+        # Create Google Doc
+        creds = get_google_credentials()
+        docs_service = build("docs", "v1", credentials=creds)
+        drive_service = build("drive", "v3", credentials=creds)
+
+        doc_title = f"[{cid}] LEGUS - {brief['topic'][:60]}"
+        doc = docs_service.documents().create(body={"title": doc_title}).execute()
+        doc_id = doc["documentId"]
+
+        sep = "=" * 40
+        full_text = (
+            f"Content ID: {cid}\n"
+            f"Brand: LEGUS\n"
+            f"Tipe: {brief['content_type']}\n"
+            f"Topik: {brief['topic']}\n"
+            f"Hook: (derived from topic)\n"
+            f"Source: {brief['source']}\n"
+            f"Verified Facts:\n"
+            + "\n".join(f"  - {f}" for f in brief["facts"]) + "\n"
+            f"{sep}\n\n"
+            f"{script}\n"
+        )
+
+        docs_service.documents().batchUpdate(
+            documentId=doc_id,
+            body={"requests": [{
+                "insertText": {"location": {"index": 1}, "text": full_text}
+            }]},
+        ).execute()
+
+        # Make shareable
+        try:
+            drive_service.permissions().create(
+                fileId=doc_id,
+                body={"type": "anyone", "role": "writer"},
+            ).execute()
+        except Exception:
+            pass
+
+        doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+
+        # Add row to Master Tracker
+        headers, data, _ = read_sheet_info()
+        col_map = get_header_index(headers)
+        new_row = [""] * len(headers)
+
+        def set_field(field, value):
+            idx = col_map.get(field)
+            if idx is not None:
+                new_row[idx] = value
+
+        from datetime import timedelta
+        post_date = (datetime.now() + timedelta(days=7)).strftime("%d %b")
+
+        set_field("brand", "LEGUS")
+        set_field("content_id", cid)
+        set_field("date", post_date)
+        set_field("content_type", brief["content_type"])
+        set_field("topik", brief["topic"])
+        set_field("hook", f"Pahami {brief['topic']}")
+        set_field("brief", f"VERIFIED BRIEF. Facts: {'; '.join(brief['facts'][:3])} | Source: {brief['source']}")
+        set_field("script_status", "Need to Review")
+        set_field("script_owner", "Dimas")
+        set_field("script_link", doc_url)
+        set_field("production_status", "Not Started")
+        set_field("asset_status", "Missing")
+        set_field("editing_status", "Not Started")
+        set_field("approval_status", "Pending")
+        set_field("caption_status", "Not Started")
+        set_field("posting_status", "Not Started")
+        set_field("priority", "Medium")
+        set_field("difficulty", "Medium")
+        set_field("effort", "Medium")
+        if "carousel" in brief["content_type"].lower():
+            set_field("visual_status", "Ready for Visual")
+        else:
+            set_field("visual_status", "Skip - Video Manual")
+        set_field("notes", f"VERIFIED LEGUS brief - {len(brief['facts'])} facts cited")
+
+        sheets_service = get_sheets_service()
+        sheets_service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{SHEET_NAME}'!A:A",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [new_row]},
+        ).execute()
+
+        # Refresh sheets
+        try:
+            rebuild_my_tasks_sheet()
+            rebuild_production_tasks_sheet()
+        except Exception:
+            pass
+
+        # Send result
+        result_msg = (
+            f"✅ LEGUS SCRIPT CREATED\n\n"
+            f"Content ID: {cid}\n"
+            f"Topic: {brief['topic']}\n"
+            f"Type: {brief['content_type']}\n"
+            f"Status: Need to Review\n"
+            f"Post date: {post_date}\n\n"
+            f"Google Doc:\n{doc_url}\n\n"
+            f"Cek di My Tasks - Dimas sheet untuk review.\n"
+            f"Centang 'Done?' kalau approve → pindah ke Ready for Client Review."
+        )
+        await update.message.reply_text(result_msg, disable_web_page_preview=True)
+
+    except Exception as e:
+        logger.error(f"[LEGUS_BRIEF] Failed: {e}", exc_info=True)
+        await update.message.reply_text(f"Error creating LEGUS script: {str(e)}")
+
+
 async def production_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/production_tasks — Sync production team task completions."""
     await update.message.reply_text("Syncing Production Tasks sheet...")
@@ -5395,6 +5718,7 @@ def main():
     app.add_handler(CommandHandler("client_review", client_review_command))
     app.add_handler(CommandHandler("my_tasks", my_tasks_command))
     app.add_handler(CommandHandler("production_tasks", production_tasks_command))
+    app.add_handler(CommandHandler("legus_brief", legus_brief_command))
     app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -5419,6 +5743,7 @@ def main():
             BotCommand("client_review", "Buat doc review per brand (e.g., /client_review Sabitah)"),
             BotCommand("my_tasks", "Sync My Tasks - Dimas approval queue"),
             BotCommand("production_tasks", "Sync Production Tasks - Team (Asdi/Dedi/Firman)"),
+            BotCommand("legus_brief", "Generate LEGUS script dari verified brief"),
             BotCommand("caption", "Generate caption + hashtag"),
             BotCommand("calendar", "Buat content calendar 1 bulan"),
             BotCommand("repurpose", "Repurpose script ke format baru"),
