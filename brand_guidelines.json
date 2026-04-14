@@ -124,31 +124,56 @@
     }
   },
   "LEGUS": {
-    "tone": "terpercaya, authoritative, serius tapi accessible",
-    "target": "pengusaha UMKM/startup yang butuh legal advice",
-    "positioning": "LEGUS = ahli hukum bisnis yang bisa dipercaya, bukan birokrat. Formal tapi approachable.",
-    "cta": "konsultasi gratis di LEGUS",
-    "bahasa": "Indonesia formal tapi tidak kaku — pakai 'Anda' atau 'kamu'",
-    "signature_phrases": [
-      "'80% pengusaha tidak tahu…' (authority stat opener)",
-      "'Ternyata, menurut [UU spesifik]…' (cite law)",
-      "'Anda berhak menolak/meminta/mendapat…'",
-      "'Jangan biarkan bisnis Anda dirugikan karena kurang pemahaman hukum'"
+    "tone": "edukatif, tenang, terpercaya — legal advisor yang bikin orang LEBIH TENANG, bukan panik",
+    "target": "pengusaha UMKM/startup yang butuh legal awareness",
+    "positioning": "LEGUS = legal advisor yang bikin hukum terasa penting dan achievable, BUKAN menakutkan",
+    "cta": "konsultasi gratis di LEGUS — untuk issue spesifik yang audiens sudah punya",
+    "bahasa": "Indonesia formal tapi accessible — pakai 'Anda' atau 'kamu'",
+    "CRITICAL_RULES_HUKUM": {
+      "no_fabrication": "JANGAN pernah fabrikasi statistik, sanksi, atau regulasi. Setiap klaim HARUS bisa di-trace ke sumber resmi (UU/PP/Perpres/PBI spesifik).",
+      "no_fear_mongering": "JANGAN bikin audiens panik. Tone harus bikin orang MERASA LEBIH TENANG dan LEBIH INFORMED, bukan lebih khawatir.",
+      "no_specific_legal_advice": "JANGAN kasih nasihat hukum spesifik yang bisa disalahartikan sebagai legal advice resmi. LEGUS = edukasi umum, konsultasi = tim hukum LEGUS.",
+      "lawyer_review_required": "Setiap konten yang menyebut UU/PP/regulasi spesifik WAJIB di-review oleh tim hukum LEGUS sebelum publish. Non-negotiable.",
+      "verified_sources_only": "Cite hanya: UU/PP/Perpres/PBI dengan nomor+pasal yang sudah di-verify, ATAU pernyataan resmi dari media kredibel (Kompas, Bisnis, ANTARA, Bloomberg Technoz)."
+    },
+    "FORBIDDEN_PATTERNS": [
+      "❌ '80% pengusaha tidak tahu…' (fabricated statistic)",
+      "❌ '60% UMKM belum legal…' (unsourced stat)",
+      "❌ '70% sengketa berawal dari…' (unsourced stat)",
+      "❌ Angka sanksi spesifik tanpa verifikasi (Rp 50 miliar, 4% omzet, dll)",
+      "❌ 'Ternyata menurut [UU X/Y]…' kalau interpretasi UU-nya belum di-verify lawyer",
+      "❌ 'Wajib implementasi April 2026' tanpa konfirmasi tanggal berlaku",
+      "❌ Countdown deadline fiktif (77 hari, 18 bulan) tanpa sumber",
+      "❌ Claim ancaman 'izin lama tidak berlaku' tanpa dasar regulasi"
     ],
-    "content_angles": [
-      "Hak hukum yang jarang diketahui pengusaha",
-      "Regulasi baru / update terbaru",
-      "Stats & data yang menakutkan (60% UMKM belum legal, dll)",
-      "Kesalahan legal fatal yang bikin bisnis rugi",
-      "Penjelasan UU/peraturan dalam bahasa sederhana"
+    "SAFE_CONTENT_ANGLES": [
+      "✅ Pentingnya NIB, akta pendirian, pemisahan rekening bisnis-pribadi (evergreen universal truths)",
+      "✅ Bedanya PT vs CV (struktur legal general, tanpa angka pajak spesifik)",
+      "✅ Pentingnya kontrak tertulis (prinsip umum, bukan klausul spesifik)",
+      "✅ Kapan butuh konsultan hukum (general awareness, tanpa fake stats)",
+      "✅ Update regulasi HANYA yang sudah confirmed + lawyer-reviewed (e.g., regulasi valas BI April 2026 yang sudah diverifikasi)",
+      "✅ Hak prosedural dasar pengusaha (due process) — dengan cite UU akurat",
+      "✅ Penjelasan istilah hukum dalam bahasa sederhana"
+    ],
+    "PREFERRED_OPENERS": [
+      "'Ada pertanyaan dari pengusaha yang sering ditanya ke tim LEGUS…'",
+      "'Dalam praktik, banyak pengusaha yang bertanya…'",
+      "'Topik hukum yang sering disalahpahami adalah…'",
+      "'Pahami dulu: [konsep dasar]…'",
+      "Hindari SEMUA opener 'X% pengusaha tidak tahu' atau similar unsourced stats"
     ],
     "rules": [
-      "Posisikan LEGUS sebagai ahli hukum bisnis yang bisa dipercaya",
-      "Gunakan data atau fakta hukum yang relevan — SELALU cite UU/peraturan spesifik",
-      "Jangan pakai bahasa gaul, tetap formal tapi tidak kaku",
-      "CTA selalu arahkan ke konsultasi gratis",
-      "Pakai stats authority opener (misal '80% pengusaha tidak tahu...')",
-      "Hindari topik seasonal Lebaran/Ramadan — evergreen legal topics"
+      "Posisikan LEGUS sebagai ahli hukum bisnis yang bisa dipercaya — BUKAN fear-mongering media",
+      "SETIAP klaim legal WAJIB cite sumber spesifik yang sudah di-verify (UU+pasal, Perpres+nomor, dll)",
+      "TIDAK BOLEH fabrikasi statistik ('80% pengusaha tidak tahu' = FORBIDDEN)",
+      "TIDAK BOLEH kasih angka sanksi/denda spesifik tanpa verifikasi lawyer",
+      "TIDAK BOLEH bikin countdown/deadline fiktif",
+      "Tone: bikin audiens lebih TENANG dan lebih INFORMED, bukan panik",
+      "Bahasa formal tapi tidak kaku — pakai 'Anda'",
+      "CTA: konsultasi gratis untuk issue spesifik audiens (bukan scare tactic)",
+      "Hindari topik seasonal Lebaran/Ramadan — evergreen legal education",
+      "Prefer konten evergreen (hak dasar, struktur legal, kontrak prinsip) daripada regulasi timeline-specific",
+      "Konten yang menyebut regulasi spesifik WAJIB lawyer-reviewed sebelum publish"
     ],
     "script_format": {
       "reel_template": "🎬 REELS SCRIPT – [CID] (LEGUS)\n🎯 HOOK (0–5 detik)\nVisual: [serious, professional setting or shocking stat visual]\nSpeaker: \"[stat authority — '80% pengusaha tidak tahu…']\"\n(pause) \"…ternyata mereka berhak [X].\"\n\n🎯 CONTEXT (5–20 detik)\nVisual: [documents, legal scene]\nSpeaker: \"Menurut [UU spesifik / pasal]…\"\n\"[penjelasan hak/kewajiban]\"\n\n🎯 INSIGHT (20–30 detik)\nVisual: [businessman thinking]\nSpeaker: \"Banyak pengusaha tidak tahu hal ini…\"\n\"dan akhirnya merugi [specific risk].\"\n\n🎯 CTA (30–40 detik)\nVisual: [LEGUS logo, office setting]\nSpeaker: \"Jangan biarkan bisnis Anda rugi karena kurang pemahaman hukum.\"\n\"Konsultasi gratis dengan LEGUS sekarang juga.\"",
