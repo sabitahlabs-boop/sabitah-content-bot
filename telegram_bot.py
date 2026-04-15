@@ -1965,7 +1965,7 @@ def rebuild_my_tasks_sheet():
 
     # Build rows
     sheet_headers = [
-        "Done?", "Urgency", "Days Until", "Date", "Priority",
+        "Done?", "Reject?", "Urgency", "Days Until", "Date", "Priority",
         "Content ID", "Brand", "Type", "Topic", "Hook", "Script Link"
     ]
     rows = [sheet_headers]
@@ -1986,7 +1986,8 @@ def rebuild_my_tasks_sheet():
             label = "LATER"
 
         rows.append([
-            False,
+            False,   # Done?
+            False,   # Reject?
             label,
             p["days_until"] if p["days_until"] != 999 else "",
             p["date"],
@@ -2006,17 +2007,17 @@ def rebuild_my_tasks_sheet():
         body={"values": rows},
     ).execute()
 
-    # Re-add checkbox validation (only for the data rows)
-    service.spreadsheets().batchUpdate(
-        spreadsheetId=SPREADSHEET_ID,
-        body={"requests": [{
+    # Re-add checkbox validation for both Done? and Reject? columns
+    requests_validation = []
+    for col_idx in range(2):  # Col A (Done?) and Col B (Reject?)
+        requests_validation.append({
             "setDataValidation": {
                 "range": {
                     "sheetId": sheet_id,
                     "startRowIndex": 1,
                     "endRowIndex": len(rows) + 50,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 1,
+                    "startColumnIndex": col_idx,
+                    "endColumnIndex": col_idx + 1,
                 },
                 "rule": {
                     "condition": {"type": "BOOLEAN"},
@@ -2024,7 +2025,10 @@ def rebuild_my_tasks_sheet():
                     "strict": True,
                 },
             }
-        }]},
+        })
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=SPREADSHEET_ID,
+        body={"requests": requests_validation},
     ).execute()
 
     return {
@@ -2036,8 +2040,10 @@ def rebuild_my_tasks_sheet():
 
 
 def sync_my_tasks_completions():
-    """Read My Tasks sheet, find rows with Done?=TRUE, update Master Tracker
-    Script Status to 'Ready for Client Review' (next stage after Dimas approves), then rebuild the sheet.
+    """Read My Tasks sheet, find rows with Done?=TRUE or Reject?=TRUE.
+    - Done=TRUE → Script Status = 'Ready for Client Review'
+    - Reject=TRUE → DELETE row from Master Tracker (hard delete)
+    Then rebuild the sheet.
     Returns dict with counts."""
     service = get_sheets_service()
 
@@ -2052,23 +2058,36 @@ def sync_my_tasks_completions():
 
     rows = result.get("values", [])
     if len(rows) < 2:
-        return {"completed": 0, "message": "No tasks in sheet"}
+        return {"completed": 0, "rejected": 0, "message": "No tasks in sheet"}
 
-    # Find checked items (Done? = TRUE in column A)
+    # Column indices (after adding Reject column):
+    # 0: Done?  1: Reject?  2: Urgency  3: Days  4: Date  5: Priority
+    # 6: Content ID  7: Brand  8: Type  9: Topic  10: Hook  11: Script Link
     completed_cids = []
+    rejected_cids = []
+
     for row in rows[1:]:
         if not row:
             continue
         done_val = row[0] if len(row) > 0 else ""
-        if str(done_val).upper() == "TRUE":
-            cid = row[5] if len(row) > 5 else ""
-            if cid:
-                completed_cids.append(cid)
+        reject_val = row[1] if len(row) > 1 else ""
+        cid = row[6] if len(row) > 6 else ""
+        if not cid:
+            continue
 
-    if not completed_cids:
-        return {"completed": 0}
+        reject_checked = str(reject_val).upper() == "TRUE"
+        done_checked = str(done_val).upper() == "TRUE"
 
-    # Update Master Tracker for each completed CID
+        # Reject takes priority if both checked
+        if reject_checked:
+            rejected_cids.append(cid)
+        elif done_checked:
+            completed_cids.append(cid)
+
+    if not completed_cids and not rejected_cids:
+        return {"completed": 0, "rejected": 0}
+
+    # ====== HANDLE COMPLETED → Update to Ready for Client Review ======
     headers, data, _ = read_sheet_info()
     col_map = get_header_index(headers)
     ss_col = col_map.get("script_status")
@@ -2076,29 +2095,82 @@ def sync_my_tasks_completions():
 
     updates = []
     updated_cids = []
+    rows_to_delete = []  # (row_index 0-based in data)
+
     for row_idx, row in enumerate(data):
         if cid_col >= len(row):
             continue
         cid = row[cid_col].strip()
+        actual_row = row_idx + 3  # 1-based sheet row
+
         if cid in completed_cids:
-            actual_row = row_idx + 3
             cell = f"'{SHEET_NAME}'!{col_to_letter(ss_col)}{actual_row}"
             updates.append({"range": cell, "values": [["Ready for Client Review"]]})
             updated_cids.append(cid)
+        elif cid in rejected_cids:
+            # 0-based sheet row for deleteDimension (rows 0,1 are headers)
+            rows_to_delete.append(row_idx + 2)  # 0-based index, header rows 0-1
 
     if updates:
         service.spreadsheets().values().batchUpdate(
             spreadsheetId=SPREADSHEET_ID,
             body={"valueInputOption": "RAW", "data": updates},
         ).execute()
-        logger.info(f"[MY_TASKS] Marked {len(updated_cids)} scripts as Ready for Client Review: {updated_cids}")
+        logger.info(f"[MY_TASKS] Marked {len(updated_cids)} as Ready for Client Review: {updated_cids}")
 
-    # Rebuild the sheet to remove completed items + add new Done scripts
+    # ====== HANDLE REJECTED → DELETE rows from Master Tracker ======
+    deleted_cids = []
+    if rows_to_delete:
+        # Get master tracker sheet ID
+        master_sheet_id = None
+        try:
+            meta = service.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
+            for s in meta["sheets"]:
+                if s["properties"]["title"] == SHEET_NAME:
+                    master_sheet_id = s["properties"]["sheetId"]
+                    break
+        except Exception as e:
+            logger.error(f"[MY_TASKS] Failed to get master sheet ID: {e}")
+
+        if master_sheet_id is not None:
+            # Sort descending so deleting doesn't shift subsequent indices
+            rows_to_delete.sort(reverse=True)
+            delete_requests = []
+            for row_0based in rows_to_delete:
+                delete_requests.append({
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": master_sheet_id,
+                            "dimension": "ROWS",
+                            "startIndex": row_0based,
+                            "endIndex": row_0based + 1,
+                        }
+                    }
+                })
+
+            try:
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=SPREADSHEET_ID,
+                    body={"requests": delete_requests},
+                ).execute()
+                deleted_cids = list(rejected_cids)
+                logger.info(f"[MY_TASKS] DELETED {len(deleted_cids)} rejected scripts: {deleted_cids}")
+            except Exception as e:
+                logger.error(f"[MY_TASKS] Failed to delete rows: {e}")
+
+    # Rebuild the sheet to remove completed/rejected items + add new Need to Review
     rebuild_stats = rebuild_my_tasks_sheet()
+    # Also refresh production tasks since deletions affect it
+    try:
+        rebuild_production_tasks_sheet()
+    except Exception:
+        pass
 
     return {
         "completed": len(updated_cids),
         "completed_cids": updated_cids,
+        "rejected": len(deleted_cids),
+        "rejected_cids": deleted_cids,
         "rebuild": rebuild_stats,
     }
 
@@ -2121,13 +2193,20 @@ async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     completed = result.get("completed", 0)
     rebuild = result.get("rebuild", {})
 
+    completed_cids_list = result.get("completed_cids", [])
+    rejected = result.get("rejected", 0)
+    rejected_cids_list = result.get("rejected_cids", [])
+
     msg = (
         f"MY TASKS SYNC COMPLETE\n\n"
-        f"Marked as Ready for Client Review: {completed}\n"
+        f"Approved → Ready for Client Review: {completed}\n"
     )
     if completed > 0:
-        cids = result.get("completed_cids", [])
-        msg += f"  {', '.join(cids[:10])}{'...' if len(cids) > 10 else ''}\n"
+        msg += f"  {', '.join(completed_cids_list[:10])}{'...' if len(completed_cids_list) > 10 else ''}\n"
+
+    msg += f"\nRejected → DELETED from tracker: {rejected}\n"
+    if rejected > 0:
+        msg += f"  {', '.join(rejected_cids_list[:10])}{'...' if len(rejected_cids_list) > 10 else ''}\n"
 
     msg += (
         f"\nMy Tasks sheet rebuilt:\n"
@@ -2136,7 +2215,8 @@ async def my_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"  TODAY: {rebuild.get('today', 0)}\n"
         f"  URGENT (3 days): {rebuild.get('urgent', 0)}\n\n"
         f"Buka sheet 'My Tasks - Dimas' untuk lihat daftar.\n"
-        f"Centang checkbox kalau sudah selesai review, lalu run /my_tasks lagi."
+        f"Centang 'Done?' kalau approve → pindah ke Ready for Client Review.\n"
+        f"Centang 'Reject?' kalau ga relate → row dihapus total dari tracker."
     )
     await update.message.reply_text(msg)
 
@@ -3080,18 +3160,22 @@ async def auto_sync_my_tasks(context: ContextTypes.DEFAULT_TYPE):
     """Background job: auto-sync My Tasks every X minutes."""
     try:
         result = sync_my_tasks_completions()
-        if result.get("completed", 0) > 0:
-            logger.info(f"[MY_TASKS] Auto-sync completed: {result}")
-            # Notify Dimas if any items were synced
+        completed = result.get("completed", 0)
+        rejected = result.get("rejected", 0)
+        if completed > 0 or rejected > 0:
+            logger.info(f"[MY_TASKS] Auto-sync: completed={completed}, rejected={rejected}")
             dimas_chat = PIC_REGISTRY.get("Dimas", {}).get("chat_id")
             if dimas_chat:
-                cids = result.get("completed_cids", [])
-                msg = (
-                    f"AUTO-SYNC: {len(cids)} script ditandai Ready for Client Review\n"
-                    f"  {', '.join(cids[:10])}\n\n"
-                    f"Sudah siap untuk di-review oleh client.\n"
-                    f"Run /client_review <brand> untuk generate doc ke client."
-                )
+                parts = ["AUTO-SYNC MY TASKS:"]
+                if completed > 0:
+                    cids = result.get("completed_cids", [])
+                    parts.append(f"\nAPPROVED → Ready for Client Review: {completed}")
+                    parts.append(f"  {', '.join(cids[:10])}")
+                if rejected > 0:
+                    rcids = result.get("rejected_cids", [])
+                    parts.append(f"\nREJECTED → DELETED from tracker: {rejected}")
+                    parts.append(f"  {', '.join(rcids[:10])}")
+                msg = "\n".join(parts)
                 try:
                     await context.bot.send_message(chat_id=dimas_chat, text=msg)
                 except Exception:
