@@ -5547,15 +5547,42 @@ async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def send_pic_reminders(context: ContextTypes.DEFAULT_TYPE):
-    """Job harian: kirim reminder personal ke setiap PIC berdasarkan pending tasks."""
+    """Job harian: kirim reminder personal ke setiap PIC berdasarkan pending tasks.
+
+    Menggunakan 4-status workflow:
+    - Owner (Dimas): scripts dengan status 'Need to Review' (dari My Tasks sheet)
+    - Production team (Asdi/Dedi/Firman): scripts dengan status 'Ready for Production' (dari Production Tasks sheet)
+
+    Juga refresh kedua sheet dulu supaya konsisten dengan yang dikirim.
+    """
+    # Refresh sheets first so the Telegram message matches what's in tracker
+    try:
+        rebuild_my_tasks_sheet()
+    except Exception as e:
+        logger.warning(f"[PIC] Failed to refresh My Tasks: {e}")
+    try:
+        rebuild_production_tasks_sheet()
+    except Exception as e:
+        logger.warning(f"[PIC] Failed to refresh Production Tasks: {e}")
+
     try:
         headers, data_rows, _ = read_sheet_info()
         col_map = get_header_index(headers)
     except Exception:
         return
 
-    # Determine pending tasks per role
-    role_tasks = {}
+    # Get sheet URLs for dashboard links
+    my_tasks_sheet_id = get_my_tasks_sheet_id()
+    prod_sheet_id = get_production_tasks_sheet_id()
+    my_tasks_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit#gid={my_tasks_sheet_id}" if my_tasks_sheet_id else ""
+    prod_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit#gid={prod_sheet_id}" if prod_sheet_id else ""
+
+    # Collect tasks per role based on new 4-status workflow
+    owner_tasks = []  # Dimas → Need to Review
+    firman_tasks = []  # Visual designer → Ready for Production (Carousel/Feed)
+    dedi_tasks = []  # Video editor → Ready for Production (Reel/Story)
+    asdi_tasks = []  # Social Media → Ready for Production (all)
+
     for row in data_rows:
         def col(field):
             idx = col_map.get(field)
@@ -5565,92 +5592,123 @@ async def send_pic_reminders(context: ContextTypes.DEFAULT_TYPE):
 
         cid = col("content_id")
         brand = col("brand")
-        topik = col("topik")[:35]
+        topik = col("topik")[:45]
         ss = col("script_status").lower()
-        vs = col("visual_status").lower()
-        cs = col("caption_status").lower()
-        ps = col("posting_status").lower()
-        ct = col("content_type")
+        ctype = col("content_type").lower()
 
         if not cid or not brand:
             continue
 
-        # Determine what stage this content is at and who should work on it
-        if "done" not in ss:
-            # Script not done → Owner (Dimas) needs to generate/approve
-            role = "Owner"
-            action = f"Generate/review script"
-        elif vs in ("ready for visual", "not started", ""):
-            if "done" in ss:
-                # Script done, visual not done → Editor
-                role = "Main Editor"
-                action = f"Buat visual design"
-        elif "designed" in vs or "pending" in vs:
-            # Visual done, needs review → Owner
-            role = "Owner"
-            action = f"Review visual design"
-        elif cs in ("not started", ""):
-            # Visual approved, caption needed → Social Media
-            role = "Social Media Specialist"
-            action = f"Buat caption & jadwal posting"
-        elif ps in ("not started", ""):
-            # Caption done, needs posting → Social Media
-            role = "Social Media Specialist"
-            action = f"Posting ke Instagram"
-        else:
-            continue  # Done or unknown state
+        task_line = f"  [{cid}] {brand} — {topik}"
 
-        if role not in role_tasks:
-            role_tasks[role] = []
-        role_tasks[role].append(f"  [{cid}] {brand} — {topik}\n    -> {action}")
+        # Owner (Dimas) — review queue
+        if ss == "need to review":
+            owner_tasks.append(task_line)
+            continue
+
+        # Production team — actual work queue (Ready for Production only)
+        if ss == "ready for production":
+            # Firman for visual design (Carousel, Feed, Single Post)
+            if any(k in ctype for k in ("carousel", "feed", "single", "post")):
+                firman_tasks.append(task_line + "\n    -> Buat visual design Canva")
+            # Dedi for video editing (Reel, Story)
+            if any(k in ctype for k in ("reel", "story", "stories")):
+                dedi_tasks.append(task_line + "\n    -> Edit video")
+            # Asdi for caption + posting (all content)
+            asdi_tasks.append(task_line + "\n    -> Buat caption + posting")
+
+    role_tasks = {
+        "Owner": {"tasks": owner_tasks, "dashboard": my_tasks_url, "label": "Need to Review"},
+        "Main Editor": {"tasks": firman_tasks, "dashboard": prod_url, "label": "Visual Design (Canva)"},
+        "Social Media Specialist": {"tasks": asdi_tasks, "dashboard": prod_url, "label": "Caption + Posting"},
+    }
+
+    # Dedi uses Main Editor role in PIC_REGISTRY, but we might want to split
+    # For now, Firman = Main Editor (handles Canva visual), Dedi is separate
+    # Since existing PIC_REGISTRY uses Main Editor = Dedi in original, let's check and handle both
+    dedi_role = None
+    for name, info in PIC_REGISTRY.items():
+        if name.lower() == "dedi":
+            dedi_role = info.get("role", "")
+            break
+    if dedi_role:
+        role_tasks[dedi_role + " (Dedi)"] = {"tasks": dedi_tasks, "dashboard": prod_url, "label": "Video Edit"}
 
     # Send to each registered PIC
     for name, info in PIC_REGISTRY.items():
         role = info.get("role", "")
         chat_id = info.get("chat_id")
-        if not chat_id or role not in role_tasks:
+        if not chat_id:
             continue
 
-        tasks = role_tasks[role]
+        # Match by name first, then by role
+        role_info = None
+        if name == "Dimas":
+            role_info = role_tasks.get("Owner")
+        elif name == "Firman":
+            role_info = role_tasks.get("Main Editor") or role_tasks.get("Visual Designer")
+        elif name == "Dedi":
+            role_info = role_tasks.get("Main Editor (Dedi)") or role_tasks.get("Main Editor")
+        elif name == "Asdi":
+            role_info = role_tasks.get("Social Media Specialist")
+        else:
+            role_info = role_tasks.get(role)
+
+        if not role_info:
+            continue
+
+        tasks = role_info["tasks"]
         if not tasks:
             continue
 
-        # Limit to 15 most important
+        dashboard_url = role_info.get("dashboard", "")
+        label = role_info.get("label", "")
+
         shown = tasks[:15]
         remaining = len(tasks) - len(shown)
 
         msg = (
             f"Pagi {name}! Ini tugas kamu hari ini:\n\n"
             f"Role: {role}\n"
+            f"Queue: {label}\n"
             f"Pending: {len(tasks)} konten\n\n"
         )
         msg += "\n".join(shown)
         if remaining > 0:
             msg += f"\n\n  ... dan {remaining} lagi"
-        msg += "\n\nSemangat! Cek tracker untuk detail."
+
+        if dashboard_url:
+            msg += f"\n\nDashboard (sudah di-refresh):\n{dashboard_url}"
+
+        msg += "\n\nSemangat!"
 
         try:
-            await context.bot.send_message(chat_id=chat_id, text=msg)
+            await context.bot.send_message(chat_id=chat_id, text=msg, disable_web_page_preview=True)
             logger.info(f"[PIC] Reminder sent to {name}: {len(tasks)} tasks")
         except Exception as e:
             logger.error(f"[PIC] Failed to send to {name}: {e}")
 
-    # Also post summary to group
+    # Post summary to group
     group_id = TEAM_GROUP_ID or context.bot_data.get("team_group_id", "")
-    if group_id and role_tasks:
-        summary = "DAILY TASK ASSIGNMENT\n\n"
-        for role, tasks in sorted(role_tasks.items()):
-            # Find PIC name for this role
-            pic_name = next((n for n, i in PIC_REGISTRY.items() if i.get("role") == role), role)
-            username = PIC_REGISTRY.get(pic_name, {}).get("username", "")
-            mention = f"@{username}" if username else pic_name
-
-            summary += f"{mention} ({role}): {len(tasks)} pending\n"
-
-        summary += "\nDetail sudah dikirim ke masing-masing PIC."
+    if group_id:
+        summary_lines = ["DAILY TASK ASSIGNMENT\n"]
+        summary_lines.append(f"Dimas (Owner, Need to Review): {len(owner_tasks)} pending")
+        summary_lines.append(f"Firman (Visual Design): {len(firman_tasks)} pending")
+        summary_lines.append(f"Dedi (Video Edit): {len(dedi_tasks)} pending")
+        summary_lines.append(f"Asdi (Caption + Posting): {len(asdi_tasks)} pending")
+        summary_lines.append("")
+        if my_tasks_url:
+            summary_lines.append(f"My Tasks (Dimas): {my_tasks_url}")
+        if prod_url:
+            summary_lines.append(f"Production Tasks (Team): {prod_url}")
+        summary_lines.append("\nDetail sudah dikirim ke masing-masing PIC.")
 
         try:
-            await context.bot.send_message(chat_id=int(group_id), text=summary)
+            await context.bot.send_message(
+                chat_id=int(group_id),
+                text="\n".join(summary_lines),
+                disable_web_page_preview=True,
+            )
         except Exception:
             pass
 
