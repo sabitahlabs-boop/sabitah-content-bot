@@ -1933,8 +1933,11 @@ def rebuild_my_tasks_sheet():
     today = datetime.now()
 
     pending = []
+    # Rank: Need to Review first (priority), then In Progress
+    status_rank = {"need to review": 0, "in progress": 1}
     for row in data:
-        if col(row, "script_status").lower() != "need to review":
+        ss = col(row, "script_status").lower()
+        if ss not in ("in progress", "need to review"):
             continue
         date_obj = _parse_planned_date(col(row, "date"))
         days_until = (date_obj - today).days if date_obj else 999
@@ -1947,10 +1950,15 @@ def rebuild_my_tasks_sheet():
             "date": col(row, "date"),
             "days_until": days_until,
             "priority": col(row, "priority") or "Medium",
+            "status": col(row, "script_status"),
             "script_link": col(row, "script_link"),
         })
 
-    pending.sort(key=lambda x: (x["days_until"], PRIORITY_RANK_MAP.get(x["priority"].lower(), 3)))
+    pending.sort(key=lambda x: (
+        status_rank.get(x["status"].lower(), 9),  # Need to Review first
+        x["days_until"],
+        PRIORITY_RANK_MAP.get(x["priority"].lower(), 3),
+    ))
 
     service = get_sheets_service()
     sheet_id = get_my_tasks_sheet_id()
@@ -1965,7 +1973,7 @@ def rebuild_my_tasks_sheet():
 
     # Build rows
     sheet_headers = [
-        "Done?", "Reject?", "Urgency", "Days Until", "Date", "Priority",
+        "Done?", "Reject?", "Status", "Urgency", "Days Until", "Date", "Priority",
         "Content ID", "Brand", "Type", "Topic", "Hook", "Script Link"
     ]
     rows = [sheet_headers]
@@ -1988,6 +1996,7 @@ def rebuild_my_tasks_sheet():
         rows.append([
             False,   # Done?
             False,   # Reject?
+            p.get("status", ""),  # In Progress / Need to Review
             label,
             p["days_until"] if p["days_until"] != 999 else "",
             p["date"],
@@ -2060,9 +2069,9 @@ def sync_my_tasks_completions():
     if len(rows) < 2:
         return {"completed": 0, "rejected": 0, "message": "No tasks in sheet"}
 
-    # Column indices (after adding Reject column):
-    # 0: Done?  1: Reject?  2: Urgency  3: Days  4: Date  5: Priority
-    # 6: Content ID  7: Brand  8: Type  9: Topic  10: Hook  11: Script Link
+    # Column indices (after adding Status column):
+    # 0: Done?  1: Reject?  2: Status  3: Urgency  4: Days  5: Date  6: Priority
+    # 7: Content ID  8: Brand  9: Type  10: Topic  11: Hook  12: Script Link
     completed_cids = []
     rejected_cids = []
 
@@ -2071,7 +2080,7 @@ def sync_my_tasks_completions():
             continue
         done_val = row[0] if len(row) > 0 else ""
         reject_val = row[1] if len(row) > 1 else ""
-        cid = row[6] if len(row) > 6 else ""
+        cid = row[7] if len(row) > 7 else ""
         if not cid:
             continue
 
